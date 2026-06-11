@@ -1,0 +1,371 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import Donor from '../models/Donor.js';
+import Hospital from '../models/Hospital.js';
+import { sendOTP, verifyOTPCode } from '../utils/otpHelper.js';
+
+// Helper: Generate JWT
+const generateToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
+    expiresIn: '30d'
+  });
+};
+
+/**
+ * @desc    Register a new Donor
+ * @route   POST /api/auth/register/donor
+ * @access  Public
+ */
+export const registerDonor = async (req, res) => {
+  try {
+    const { name, email, password, phone, bloodGroup, address, coordinates } = req.body;
+
+    // Validate coordinates
+    if (!coordinates || !Array.isArray(coordinates) || coordinates.length !== 2) {
+      return res.status(400).json({ status: 'fail', message: 'Location coordinates [lng, lat] are required' });
+    }
+
+    const [longitude, latitude] = coordinates;
+    if (isNaN(longitude) || isNaN(latitude)) {
+      return res.status(400).json({ status: 'fail', message: 'Coordinates must be valid numbers' });
+    }
+
+    // Check user existing email/phone
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    if (existingUser) {
+      return res.status(400).json({ status: 'fail', message: 'Email or phone number already registered' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create User (Donor defaults to verified=false until OTP confirmed)
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role: 'donor',
+      isVerified: false,
+      verificationStatus: 'pending' // pending OTP verification
+    });
+
+    // Create Donor Profile
+    const donor = await Donor.create({
+      user: user._id,
+      bloodGroup,
+      address,
+      location: {
+        type: 'Point',
+        coordinates: [parseFloat(longitude), parseFloat(latitude)]
+      },
+      isAvailable: true,
+      eligibilityStatus: true
+    });
+
+    // Send mock OTP SMS
+    await sendOTP(phone);
+
+    // Generate token
+    const token = generateToken(user._id, user.role);
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Donor registered successfully. Verification OTP sent to phone.',
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified
+      },
+      profile: donor
+    });
+  } catch (error) {
+    console.error('Register Donor Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Register a new Hospital
+ * @route   POST /api/auth/register/hospital
+ * @access  Public
+ */
+export const registerHospital = async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      password,
+      phone,
+      hospitalName,
+      licenseNumber,
+      address,
+      coordinates,
+      emergencyContact
+    } = req.body;
+
+    // Validate coordinates
+    if (!coordinates || !Array.isArray(coordinates) || coordinates.length !== 2) {
+      return res.status(400).json({ status: 'fail', message: 'Location coordinates [lng, lat] are required' });
+    }
+
+    const [longitude, latitude] = coordinates;
+    if (isNaN(longitude) || isNaN(latitude)) {
+      return res.status(400).json({ status: 'fail', message: 'Coordinates must be valid numbers' });
+    }
+
+    // Check existing license
+    const existingLicense = await Hospital.findOne({ licenseNumber });
+    if (existingLicense) {
+      return res.status(400).json({ status: 'fail', message: 'License/Registration number already exists' });
+    }
+
+    // Check user existing email/phone
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    if (existingUser) {
+      return res.status(400).json({ status: 'fail', message: 'Email or phone number already registered' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create User (Hospital is NOT verified by default, requires admin approval)
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role: 'hospital',
+      isVerified: false,
+      verificationStatus: 'pending' // pending admin verification
+    });
+
+    // Create Hospital Profile
+    const hospital = await Hospital.create({
+      user: user._id,
+      hospitalName,
+      licenseNumber,
+      address,
+      location: {
+        type: 'Point',
+        coordinates: [parseFloat(longitude), parseFloat(latitude)]
+      },
+      emergencyContact
+    });
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Hospital registered successfully. Awaiting admin profile verification.',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus
+      },
+      profile: hospital
+    });
+  } catch (error) {
+    console.error('Register Hospital Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Verify Donor Registration OTP
+ * @route   POST /api/auth/verify-otp
+ * @access  Public
+ */
+export const verifyOTP = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+
+    if (!phone || !otp) {
+      return res.status(400).json({ status: 'fail', message: 'Phone and OTP are required' });
+    }
+
+    // Verify OTP code
+    const isOTPValid = await verifyOTPCode(phone, otp);
+    if (!isOTPValid) {
+      return res.status(400).json({ status: 'fail', message: 'Invalid or expired OTP code' });
+    }
+
+    // Find user and mark as verified
+    const user = await User.findOneAndUpdate(
+      { phone },
+      { isVerified: true, verificationStatus: 'approved' },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'User not found' });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Phone number verified successfully. Account is active.',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (error) {
+    console.error('Verify OTP Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Resend registration OTP
+ * @route   POST /api/auth/resend-otp
+ * @access  Public
+ */
+export const resendOTP = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ status: 'fail', message: 'Phone number is required' });
+    }
+
+    const user = await User.findOne({ phone, role: 'donor' });
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'Donor account not found with this phone number' });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ status: 'fail', message: 'Phone number is already verified' });
+    }
+
+    // Send mock OTP
+    await sendOTP(phone);
+
+    res.status(200).json({
+      status: 'success',
+      message: 'New OTP code sent to phone.'
+    });
+  } catch (error) {
+    console.error('Resend OTP Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Authenticate user & get token
+ * @route   POST /api/auth/login
+ * @access  Public
+ */
+export const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ status: 'fail', message: 'Please provide email and password' });
+    }
+
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ status: 'fail', message: 'Invalid credentials' });
+    }
+
+    // Verify password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ status: 'fail', message: 'Invalid credentials' });
+    }
+
+    // Specific check for Hospital role (must be approved by Admin)
+    if (user.role === 'hospital') {
+      if (user.verificationStatus === 'pending') {
+        return res.status(403).json({
+          status: 'fail',
+          message: 'Your hospital profile is currently pending administrator verification.'
+        });
+      }
+      if (user.verificationStatus === 'rejected') {
+        return res.status(403).json({
+          status: 'fail',
+          message: 'Your hospital registration has been rejected by administrator.'
+        });
+      }
+    }
+
+    // Generate token
+    const token = generateToken(user._id, user.role);
+
+    // Fetch corresponding profile
+    let profile = null;
+    if (user.role === 'donor') {
+      profile = await Donor.findOne({ user: user._id });
+    } else if (user.role === 'hospital') {
+      profile = await Hospital.findOne({ user: user._id });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus
+      },
+      profile
+    });
+  } catch (error) {
+    console.error('Login Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Get logged in user profile
+ * @route   GET /api/auth/me
+ * @access  Private
+ */
+export const getMe = async (req, res) => {
+  try {
+    const user = req.user;
+
+    let profile = null;
+    if (user.role === 'donor') {
+      profile = await Donor.findOne({ user: user._id });
+    } else if (user.role === 'hospital') {
+      profile = await Hospital.findOne({ user: user._id });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified,
+        verificationStatus: user.verificationStatus
+      },
+      profile
+    });
+  } catch (error) {
+    console.error('Get Profile Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
