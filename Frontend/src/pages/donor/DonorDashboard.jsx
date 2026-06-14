@@ -6,7 +6,19 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
 import { computeBadges, nextBadge } from '../../utils/badges.js';
 
-const BLOOD_GROUPS = ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+// Which groups a given donor blood type can donate to
+const DONATABLE_TO = {
+  'A+':  ['A+', 'AB+'],
+  'A-':  ['A+', 'A-', 'AB+', 'AB-'],
+  'B+':  ['B+', 'AB+'],
+  'B-':  ['B+', 'B-', 'AB+', 'AB-'],
+  'AB+': ['AB+'],
+  'AB-': ['AB+', 'AB-'],
+  'O+':  ['A+', 'B+', 'AB+', 'O+'],
+  'O-':  ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+};
 const RADIUS_OPTIONS = [
   { label: '5 km', value: '5' },
   { label: '10 km', value: '10' },
@@ -113,7 +125,12 @@ export default function DonorDashboard() {
     setLoadingRequests(true);
     try {
       const params = {};
-      if (filters.bloodGroup) params.bloodGroup = filters.bloodGroup;
+      if (filters.bloodGroup === 'all') {
+        params.showAll = 'true'; // user explicitly wants all groups
+      } else if (filters.bloodGroup) {
+        params.bloodGroup = filters.bloodGroup; // specific group selected
+      }
+      // '' → no param → backend applies compatibility filter by default
       if (location) { params.lat = location.lat; params.lng = location.lng; params.radius = rad; }
       else if (filters.city.trim()) { params.city = filters.city.trim(); }
       const { data } = await api.get('/donor/requests', { params });
@@ -470,6 +487,27 @@ export default function DonorDashboard() {
             </span>
           </div>
 
+          {/* Compatibility hint */}
+          {donor?.bloodGroup && filters.bloodGroup === '' && (
+            <div className="flex items-center gap-2 text-sm mb-3 px-1">
+              {donor.bloodGroup === 'O-' ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold text-xs bg-purple-100 text-purple-700 border border-purple-200">
+                  🌟 Universal Donor — you can donate to all blood types
+                </span>
+              ) : (
+                <span className="text-gray-500 text-xs">
+                  Showing requests your <strong className="text-[#C0162C]">{donor.bloodGroup}</strong> blood can help with:
+                  {' '}
+                  {(DONATABLE_TO[donor.bloodGroup] || []).map((g, i, arr) => (
+                    <span key={g}>
+                      <strong className="text-[#1A1A2E]">{g}</strong>{i < arr.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Filters */}
           <form onSubmit={(e) => { e.preventDefault(); fetchRequests(); }}
             className="card mb-4 flex flex-wrap gap-3 items-end p-4">
@@ -477,7 +515,9 @@ export default function DonorDashboard() {
               <label className="input-label text-xs">Blood Group</label>
               <select value={filters.bloodGroup} onChange={(e) => setFilters({ ...filters, bloodGroup: e.target.value })}
                 className="input-field text-sm py-2">
-                {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg || 'All groups'}</option>)}
+                <option value="">My Compatible Groups</option>
+                <option value="all">All Blood Groups</option>
+                {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
               </select>
             </div>
 
@@ -527,8 +567,19 @@ export default function DonorDashboard() {
               <div className="text-5xl mb-4">🩸</div>
               <h3 className="font-bold text-[#1A1A2E] mb-2">No Requests Found</h3>
               <p className="text-gray-400 text-sm">
-                {userLocation ? `No open requests within ${radius} km` : 'No open blood requests match your filters'}
+                {userLocation
+                  ? `No compatible requests within ${radius} km`
+                  : filters.bloodGroup === ''
+                    ? 'No open requests compatible with your blood type right now'
+                    : 'No open blood requests match your filters'}
               </p>
+              {filters.bloodGroup === '' && (
+                <button
+                  onClick={() => { setFilters((f) => ({ ...f, bloodGroup: 'all' })); fetchRequests(); }}
+                  className="mt-4 text-sm text-[#C0162C] font-semibold hover:underline">
+                  Show all blood groups →
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -568,7 +619,12 @@ export default function DonorDashboard() {
                     )}
                     {req.compatibility === 'compatible' && (
                       <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200 w-fit">
-                        ✓ Compatible Type
+                        ✓ Compatible {donor?.bloodGroup === 'O-' ? '· Universal Donor 🌟' : 'Type'}
+                      </span>
+                    )}
+                    {req.compatibility === 'none' && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 border border-gray-200 w-fit">
+                        ✗ Your type cannot donate here
                       </span>
                     )}
 

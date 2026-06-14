@@ -5,7 +5,7 @@ import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import { emitToUser } from '../socket/socketHandler.js';
 import { sendDonorResponseEmail } from '../utils/emailService.js';
-import { canDonate } from '../utils/bloodCompatibility.js';
+import { canDonate, getDonatableTo } from '../utils/bloodCompatibility.js';
 
 const DONATION_COOLDOWN_DAYS = 90;
 
@@ -70,32 +70,43 @@ export const updateDonorProfile = async (req, res) => {
 
 export const getBloodRequests = async (req, res) => {
   try {
-    const { bloodGroup, city, lat, lng, radius } = req.query;
+    const { bloodGroup, city, lat, lng, radius, showAll } = req.query;
     const donorUserId = req.user._id.toString();
 
-    // Fetch donor's blood group for compatibility calculation
     const donorProfile = await Donor.findOne({ user: req.user._id }).select('bloodGroup').lean();
     const donorBloodGroup = donorProfile?.bloodGroup;
 
     const now = new Date();
     const expiryFilter = { $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }] };
 
+    // Build blood group filter:
+    //   - explicit group selected  → exact match
+    //   - showAll=true             → no filter (user wants everything)
+    //   - default (no param)       → only groups this donor is compatible with
+    let bgFilter;
+    if (bloodGroup) {
+      bgFilter = bloodGroup;
+    } else if (showAll !== 'true' && donorBloodGroup) {
+      bgFilter = { $in: getDonatableTo(donorBloodGroup) };
+    }
+
     const attachMeta = (responses, requestBloodGroup) => {
       const myResp = responses?.find((resp) => resp.donorId?.toString() === donorUserId);
       const compatibility = donorBloodGroup
-        ? (donorBloodGroup === requestBloodGroup ? 'exact' : canDonate(donorBloodGroup, requestBloodGroup) ? 'compatible' : 'none')
+        ? (donorBloodGroup === requestBloodGroup ? 'exact'
+          : canDonate(donorBloodGroup, requestBloodGroup) ? 'compatible' : 'none')
         : 'unknown';
       return {
         hasResponded: !!myResp,
         myResponse: myResp ? { status: myResp.status, respondedAt: myResp.respondedAt } : null,
-        compatibility
+        compatibility,
       };
     };
 
     if (lat && lng) {
       const radiusInMeters = (parseFloat(radius) || 10) * 1000;
-      const matchQuery = { status: 'Pending', ...expiryFilter };
-      if (bloodGroup) matchQuery.bloodGroup = bloodGroup;
+      const geoMatchQuery = { status: 'Pending' };
+      if (bgFilter) geoMatchQuery.bloodGroup = bgFilter;
 
       const requests = await BloodRequest.aggregate([
         {
@@ -104,10 +115,10 @@ export const getBloodRequests = async (req, res) => {
             distanceField: 'distance',
             maxDistance: radiusInMeters,
             spherical: true,
-            query: { status: 'Pending' }
-          }
+            query: geoMatchQuery,
+          },
         },
-        { $match: { $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }] } }
+        { $match: { $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }] } },
       ]);
 
       const requestsWithStatus = requests.map((r) => ({ ...r, ...attachMeta(r.responses, r.bloodGroup) }));
@@ -115,7 +126,7 @@ export const getBloodRequests = async (req, res) => {
     }
 
     const query = { status: 'Pending', ...expiryFilter };
-    if (bloodGroup) query.bloodGroup = bloodGroup;
+    if (bgFilter) query.bloodGroup = bgFilter;
     if (city) query.address = { $regex: city, $options: 'i' };
 
     const requests = await BloodRequest.find(query).sort({ createdAt: -1 });
