@@ -29,8 +29,12 @@ export const protect = async (req, res, next) => {
 
       next();
     } catch (error) {
-      console.error('JWT Verification Error:', error.message);
-      return res.status(401).json({ status: 'fail', message: 'Not authorized, token failed' });
+      const isTokenError = error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError';
+      if (!isTokenError) console.error('JWT Verification Error:', error.message);
+      const message = error.name === 'TokenExpiredError'
+        ? 'Token expired, please login again'
+        : 'Invalid token, please login again';
+      return res.status(401).json({ status: 'fail', message });
     }
   }
 

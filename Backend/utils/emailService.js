@@ -8,6 +8,7 @@ const createTransporter = () =>
     port: 587,
     secure: false,
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    tls: { rejectUnauthorized: false },
   });
 
 const canSend = () => !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
