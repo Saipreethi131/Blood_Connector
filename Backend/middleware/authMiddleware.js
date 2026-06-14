@@ -23,6 +23,10 @@ export const protect = async (req, res, next) => {
         return res.status(401).json({ status: 'fail', message: 'User no longer exists' });
       }
 
+      if (req.user.isSuspended) {
+        return res.status(403).json({ status: 'fail', message: 'Your account has been suspended. Please contact support.' });
+      }
+
       next();
     } catch (error) {
       console.error('JWT Verification Error:', error.message);

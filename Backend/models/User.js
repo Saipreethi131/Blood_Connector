@@ -39,6 +39,18 @@ const userSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
+  isSuspended: {
+    type: Boolean,
+    default: false
+  },
+  refreshToken: {
+    type: String,
+    default: null,
+  },
+  refreshTokenExpiry: {
+    type: Date,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now

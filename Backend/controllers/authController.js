@@ -5,12 +5,13 @@ import Donor from '../models/Donor.js';
 import Hospital from '../models/Hospital.js';
 import { sendOTP, verifyOTPCode } from '../utils/otpHelper.js';
 
-// Helper: Generate JWT
-const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
-    expiresIn: '30d'
-  });
-};
+const generateAccessToken = (id, role) =>
+  jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '15m' });
+
+const generateRefreshToken = (id) =>
+  jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+const REFRESH_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * @desc    Register a new Donor
@@ -68,13 +69,17 @@ export const registerDonor = async (req, res) => {
     // Send mock OTP SMS
     await sendOTP(phone);
 
-    // Generate token
-    const token = generateToken(user._id, user.role);
+    const accessToken  = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken       = refreshToken;
+    user.refreshTokenExpiry = new Date(Date.now() + REFRESH_EXPIRY_MS);
+    await user.save();
 
     res.status(201).json({
       status: 'success',
       message: 'Donor registered successfully. Verification OTP sent to phone.',
-      token,
+      token: accessToken,
+      refreshToken,
       user: {
         id: user._id,
         name: user.name,
@@ -304,20 +309,25 @@ export const login = async (req, res) => {
       }
     }
 
-    // Generate token
-    const token = generateToken(user._id, user.role);
-
-    // Fetch corresponding profile
-    let profile = null;
-    if (user.role === 'donor') {
-      profile = await Donor.findOne({ user: user._id });
-    } else if (user.role === 'hospital') {
-      profile = await Hospital.findOne({ user: user._id });
+    // Check suspension BEFORE generating tokens
+    if (user.isSuspended) {
+      return res.status(403).json({ status: 'fail', message: 'Your account has been suspended. Please contact support.' });
     }
+
+    const accessToken  = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken       = refreshToken;
+    user.refreshTokenExpiry = new Date(Date.now() + REFRESH_EXPIRY_MS);
+    await user.save();
+
+    let profile = null;
+    if (user.role === 'donor')    profile = await Donor.findOne({ user: user._id });
+    if (user.role === 'hospital') profile = await Hospital.findOne({ user: user._id });
 
     res.status(200).json({
       status: 'success',
-      token,
+      token: accessToken,
+      refreshToken,
       user: {
         id: user._id,
         name: user.name,
@@ -331,6 +341,66 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Issue new access token using a valid refresh token
+ * @route   POST /api/auth/refresh
+ * @access  Public
+ */
+export const refreshAccessToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(401).json({ status: 'fail', message: 'Refresh token required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    } catch {
+      return res.status(401).json({ status: 'fail', message: 'Invalid or expired refresh token' });
+    }
+
+    const user = await User.findOne({ _id: decoded.id, refreshToken });
+    if (!user) {
+      return res.status(401).json({ status: 'fail', message: 'Refresh token revoked or not found' });
+    }
+    if (user.isSuspended) {
+      return res.status(403).json({ status: 'fail', message: 'Account suspended' });
+    }
+    if (!user.refreshTokenExpiry || new Date() > user.refreshTokenExpiry) {
+      user.refreshToken = null; user.refreshTokenExpiry = null; await user.save();
+      return res.status(401).json({ status: 'fail', message: 'Refresh token expired. Please log in again.' });
+    }
+
+    const newAccessToken = generateAccessToken(user._id, user.role);
+    res.json({ status: 'success', data: { token: newAccessToken } });
+  } catch (error) {
+    console.error('Refresh Token Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Logout — revoke refresh token
+ * @route   POST /api/auth/logout
+ * @access  Public
+ */
+export const logout = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await User.findOneAndUpdate(
+        { refreshToken },
+        { refreshToken: null, refreshTokenExpiry: null }
+      );
+    }
+    res.json({ status: 'success', message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
