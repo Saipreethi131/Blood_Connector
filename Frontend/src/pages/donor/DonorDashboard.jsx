@@ -114,11 +114,25 @@ export default function DonorDashboard() {
   const fetchProfile = async () => {
     try {
       const { data } = await api.get('/donor/profile');
-      setDonor(data.data.donor);
+      const profile = data.data.donor ?? null;
+      setDonor(profile);
       setEligibility(data.data.eligibility ?? null);
-      setEditForm({ bloodGroup: data.data.donor.bloodGroup || '', address: data.data.donor.address || '' });
-    } catch { toast.error('Failed to load profile'); }
-    finally { setLoadingProfile(false); }
+      if (profile) {
+        setEditForm({ bloodGroup: profile.bloodGroup || '', address: profile.address || '' });
+      }
+    } catch (err) {
+      if (!err.response) {
+        toast.error('Cannot connect to server — make sure the backend is running');
+      } else if (err.response.status === 401) {
+        // axios interceptor handles redirect; no extra toast needed
+      } else if (err.response.status === 404) {
+        toast.error('Profile not found — please complete your setup');
+      } else {
+        toast.error('Server error loading profile — please try again');
+      }
+    } finally {
+      setLoadingProfile(false);
+    }
   };
 
   const fetchRequests = async (location = userLocation, rad = radius) => {
@@ -329,8 +343,19 @@ export default function DonorDashboard() {
 
       {/* ─── Profile Card ─────────────────────────────────────────────────── */}
       {loadingProfile ? <ProfileSkeleton /> : !donor ? (
-        <div className="card text-center py-10">
-          <p className="text-gray-500">Profile not found. Please contact support.</p>
+        <div className="card text-center py-10 space-y-4">
+          <div className="text-5xl">🩸</div>
+          <h2 className="text-lg font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            Complete Your Profile
+          </h2>
+          <p className="text-gray-500 text-sm max-w-xs mx-auto">
+            Set your blood group and address so hospitals can find you when they need help.
+          </p>
+          <button
+            onClick={() => setEditMode(true)}
+            className="btn-primary text-sm px-6 py-2.5">
+            Set Up Profile →
+          </button>
         </div>
       ) : editMode ? (
         <div className="card">

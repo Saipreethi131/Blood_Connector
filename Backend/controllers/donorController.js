@@ -12,8 +12,10 @@ const DONATION_COOLDOWN_DAYS = 90;
 export const getDonorProfile = async (req, res) => {
   try {
     const donor = await Donor.findOne({ user: req.user._id }).populate('user', 'name email phone');
+
+    // New users won't have a profile yet — return null instead of 404
     if (!donor) {
-      return res.status(404).json({ status: 'fail', message: 'Donor profile not found' });
+      return res.status(200).json({ status: 'success', data: { donor: null, eligibility: null } });
     }
 
     const lastDonated = donor.lastDonationDate;
