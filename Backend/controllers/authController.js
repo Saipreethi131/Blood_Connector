@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import Donor from '../models/Donor.js';
 import Hospital from '../models/Hospital.js';
 import { sendOTP, verifyOTPCode } from '../utils/otpHelper.js';
+import { sendOTPEmail } from '../utils/emailService.js';
 
 const generateAccessToken = (id, role) =>
   jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '15m' });
@@ -66,8 +67,9 @@ export const registerDonor = async (req, res) => {
       eligibilityStatus: true
     });
 
-    // Send mock OTP SMS
-    await sendOTP(phone);
+    // Generate OTP and send via email
+    const otp = await sendOTP(phone);
+    sendOTPEmail(user.email, otp); // fire-and-forget; failure is logged, not thrown
 
     const accessToken  = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
@@ -77,7 +79,7 @@ export const registerDonor = async (req, res) => {
 
     res.status(201).json({
       status: 'success',
-      message: 'Donor registered successfully. Verification OTP sent to phone.',
+      message: 'Donor registered successfully. A verification code has been sent to your email.',
       token: accessToken,
       refreshToken,
       user: {
@@ -255,12 +257,12 @@ export const resendOTP = async (req, res) => {
       return res.status(400).json({ status: 'fail', message: 'Phone number is already verified' });
     }
 
-    // Send mock OTP
-    await sendOTP(phone);
+    const otp = await sendOTP(phone);
+    sendOTPEmail(user.email, otp); // fire-and-forget
 
     res.status(200).json({
       status: 'success',
-      message: 'New OTP code sent to phone.'
+      message: 'A new verification code has been sent to your email.'
     });
   } catch (error) {
     console.error('Resend OTP Error:', error);

@@ -40,16 +40,13 @@ export default function VerifyOTP() {
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center text-4xl mb-4 shadow-xl"
             style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)' }}>
-            📱
+            ✉️
           </div>
           <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
-            Verify Your Phone
+            Verify Your Email
           </h1>
           <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">
-            An OTP has been sent to your phone number.
-            <span className="block text-xs text-amber-600 mt-1">
-              (Dev mode: check the server console for OTP)
-            </span>
+            Enter the 6-digit code sent to your email address. Check your inbox (and spam folder).
           </p>
         </div>
 
@@ -88,7 +85,7 @@ export default function VerifyOTP() {
           <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
             <button onClick={handleResend} disabled={resending}
               className="text-sm text-[#C0162C] font-semibold hover:underline disabled:opacity-50 transition-colors">
-              {resending ? 'Sending…' : '↩ Resend OTP'}
+              {resending ? 'Sending…' : '↩ Resend Code'}
             </button>
             <Link to="/login" className="text-sm text-gray-400 hover:text-[#1A1A2E] transition-colors">
               ← Back to Login

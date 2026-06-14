@@ -62,7 +62,7 @@ export default function Register() {
       await api.post(endpoint, payload);
       if (role === 'donor') {
         sessionStorage.setItem('otp_phone', form.phone);
-        toast.success('Registered! Please verify your phone number.');
+        toast.success('Registered! A verification code has been sent to your email.');
         navigate('/verify-otp');
       } else {
         toast.success('Hospital registered! Awaiting admin verification before login.');

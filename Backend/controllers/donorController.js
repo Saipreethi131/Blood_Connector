@@ -4,7 +4,7 @@ import Donation from '../models/Donation.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import { emitToUser } from '../socket/socketHandler.js';
-import { sendDonorResponseEmail } from '../utils/emailHelper.js';
+import { sendDonorResponseEmail } from '../utils/emailService.js';
 import { canDonate } from '../utils/bloodCompatibility.js';
 
 const DONATION_COOLDOWN_DAYS = 90;

@@ -7,6 +7,12 @@ import BloodInventory from '../models/BloodInventory.js';
 import { emitToUser, emitToBloodGroup } from '../socket/socketHandler.js';
 import { getCompatibleDonors } from '../utils/bloodCompatibility.js';
 import { sendPushToBloodGroup } from './pushController.js';
+import {
+  sendResponseAcceptedEmail,
+  sendResponseRejectedEmail,
+  sendCriticalRequestEmail,
+} from '../utils/emailService.js';
+import User from '../models/User.js';
 
 export const getHospitalProfile = async (req, res) => {
   try {
@@ -142,7 +148,8 @@ export const postBloodRequest = async (req, res) => {
     });
 
     if (urgency === 'Critical' || urgency === 'Urgent') {
-      const matchingDonors = await Donor.find({ bloodGroup });
+      const matchingDonors = await Donor.find({ bloodGroup, isAvailable: true })
+        .populate('user', 'email name').lean();
 
       const notificationDocs = matchingDonors.map((d) => ({
         recipient: d.user,
@@ -172,6 +179,20 @@ export const postBloodRequest = async (req, res) => {
         url: '/',
         tag: `request-${bloodRequest._id}`,
       });
+
+      // Email each available matching donor
+      for (const donor of matchingDonors) {
+        if (donor.user?.email) {
+          sendCriticalRequestEmail({
+            to: donor.user.email,
+            donorName: donor.user.name,
+            hospitalName: hospitalProfile.hospitalName,
+            bloodGroup,
+            city: hospitalProfile.address,
+            urgency,
+          });
+        }
+      }
     }
 
     res.status(201).json({
@@ -247,6 +268,27 @@ export const handleDonorResponse = async (req, res) => {
       type: 'request_update',
       requestId: request._id
     });
+
+    // Email the donor about the accept / reject decision
+    const donorUser = await User.findById(donorId).select('email name').lean();
+    if (donorUser?.email) {
+      if (action === 'accept') {
+        sendResponseAcceptedEmail({
+          to: donorUser.email,
+          donorName: donorUser.name,
+          hospitalName,
+          hospitalPhone: hospitalProfile?.emergencyContact,
+          bloodGroup: request.bloodGroup,
+        });
+      } else {
+        sendResponseRejectedEmail({
+          to: donorUser.email,
+          donorName: donorUser.name,
+          hospitalName,
+          bloodGroup: request.bloodGroup,
+        });
+      }
+    }
 
     res.status(200).json({
       status: 'success',
