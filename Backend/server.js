@@ -32,7 +32,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV !== 'production';
 
 // Global rate limit: 200 req/15min (dev: 500)
 app.use(rateLimit({
