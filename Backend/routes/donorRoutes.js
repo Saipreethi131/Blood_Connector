@@ -3,19 +3,21 @@ import {
   getDonorProfile,
   updateDonorProfile,
   getBloodRequests,
+  getDonationHistory,
   toggleAvailability,
   respondToRequest
 } from '../controllers/donorController.js';
-import { protect } from '../middleware/authMiddleware.js';
-import { authorize } from '../middleware/authMiddleware.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+import { validate } from '../middleware/validate.js';
+import { updateProfileRules } from '../validators/donorValidators.js';
 
 const router = express.Router();
 
-// All donor routes require authentication and donor role
 router.use(protect, authorize('donor'));
 
-router.route('/profile').get(getDonorProfile).post(updateDonorProfile);
+router.route('/profile').get(getDonorProfile).post(validate(updateProfileRules), updateDonorProfile);
 router.get('/requests', getBloodRequests);
+router.get('/donations', getDonationHistory);
 router.put('/availability', toggleAvailability);
 router.post('/respond/:requestId', respondToRequest);
 

@@ -284,6 +284,61 @@ export const getAdminRequests = async (req, res) => {
 };
 
 /**
+ * @desc    Suspend a user account
+ * @route   PUT /api/admin/users/:id/suspend
+ * @access  Private/Admin
+ */
+export const suspendUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ status: 'fail', message: 'User not found' });
+    if (user.role === 'admin') {
+      return res.status(400).json({ status: 'fail', message: 'Admin accounts cannot be suspended' });
+    }
+
+    user.isSuspended = true;
+    await user.save();
+
+    await Notification.create({
+      recipient: user._id,
+      message: 'Your account has been suspended by an administrator. Please contact support.',
+      type: 'general'
+    });
+
+    res.status(200).json({ status: 'success', message: `${user.name} has been suspended` });
+  } catch (error) {
+    console.error('Suspend User Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
+ * @desc    Unsuspend a user account
+ * @route   PUT /api/admin/users/:id/unsuspend
+ * @access  Private/Admin
+ */
+export const unsuspendUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ status: 'fail', message: 'User not found' });
+
+    user.isSuspended = false;
+    await user.save();
+
+    await Notification.create({
+      recipient: user._id,
+      message: 'Your account suspension has been lifted. You can now log in.',
+      type: 'general'
+    });
+
+    res.status(200).json({ status: 'success', message: `${user.name} has been unsuspended` });
+  } catch (error) {
+    console.error('Unsuspend User Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+/**
  * @desc    Seed first admin account (only works when zero admins exist)
  * @route   POST /api/admin/seed
  * @access  Public (but self-disables after first use)

@@ -4,9 +4,10 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.use(protect);
-
-router.get('/', getAllRequests);
+// Public — shareable link (no auth required)
 router.get('/:id', getRequestById);
+
+// Protected
+router.get('/', protect, getAllRequests);
 
 export default router;

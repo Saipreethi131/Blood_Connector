@@ -7,6 +7,8 @@ import {
   rejectHospital,
   getAllUsers,
   deleteUser,
+  suspendUser,
+  unsuspendUser,
   getAdminRequests,
   seedAdmin
 } from '../controllers/adminController.js';
@@ -27,6 +29,8 @@ router.put('/hospitals/:userId/approve', approveHospital);
 router.put('/hospitals/:userId/reject', rejectHospital);
 router.get('/users', getAllUsers);
 router.delete('/users/:id', deleteUser);
+router.put('/users/:id/suspend', suspendUser);
+router.put('/users/:id/unsuspend', unsuspendUser);
 router.get('/requests', getAdminRequests);
 
 export default router;

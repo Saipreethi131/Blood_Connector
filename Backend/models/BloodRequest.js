@@ -52,14 +52,17 @@ const bloodRequestSchema = new mongoose.Schema({
   },
   searchRadius: {
     type: Number,
-    default: 5 // in km
+    default: 5
   },
   responses: [{
-    donor: {
+    donorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true
     },
+    donorName: { type: String, required: true },
+    bloodGroup: { type: String, default: '' },
+    phone: { type: String, default: '' },
     status: {
       type: String,
       enum: ['Pending', 'Accepted', 'Rejected'],
@@ -70,8 +73,17 @@ const bloodRequestSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  // Set when the request is marked Fulfilled — records the primary donor
+  fulfilledBy: {
+    donorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    donorName: { type: String, default: '' }
+  },
   notes: {
     type: String
+  },
+  expiresAt: {
+    type: Date,
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   },
   createdAt: {
     type: Date,
