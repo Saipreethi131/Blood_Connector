@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState } from 'react';
 import api from '../api/axios.js';
 
 const AuthContext = createContext(null);
@@ -15,8 +15,9 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [loading, setLoading] = useState(false);
 
-  const saveSession = (tokenVal, userData, profileData) => {
+  const saveSession = (tokenVal, refreshTokenVal, userData, profileData) => {
     localStorage.setItem('token', tokenVal);
+    localStorage.setItem('refreshToken', refreshTokenVal);
     localStorage.setItem('user', JSON.stringify(userData));
     localStorage.setItem('profile', JSON.stringify(profileData));
     setToken(tokenVal);
@@ -26,12 +27,17 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
-    saveSession(data.token, data.user, data.profile);
+    saveSession(data.token, data.refreshToken, data.user, data.profile);
     return data;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken) {
+      try { await api.post('/auth/logout', { refreshToken }); } catch { /* ignore */ }
+    }
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     localStorage.removeItem('profile');
     setToken(null);
@@ -46,9 +52,7 @@ export const AuthProvider = ({ children }) => {
       setProfile(updatedProfile);
       localStorage.setItem('profile', JSON.stringify(updatedProfile));
       return updatedProfile;
-    } catch {
-      // silently fail
-    }
+    } catch { /* silently fail */ }
   };
 
   const updateProfile = (newProfile) => {
