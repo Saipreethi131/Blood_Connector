@@ -6,359 +6,1081 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const CAMP_STATUS_COLORS = {
+  Upcoming:  { bg: 'bg-blue-50',   text: 'text-blue-700',  border: 'border-blue-200' },
+  Ongoing:   { bg: 'bg-green-50',  text: 'text-green-700', border: 'border-green-200' },
+  Completed: { bg: 'bg-gray-50',   text: 'text-gray-600',  border: 'border-gray-200' },
+  Cancelled: { bg: 'bg-red-50',    text: 'text-red-600',   border: 'border-red-200' },
+};
 const URGENCY_LEVELS = ['Normal', 'Urgent', 'Critical'];
+const RADIUS_OPTIONS = [
+  { label: '5 km', value: '5' },
+  { label: '10 km', value: '10' },
+  { label: '25 km', value: '25' },
+  { label: '50 km', value: '50' },
+];
 
-const statusBadge = { Pending: 'badge-pending', Fulfilled: 'badge-fulfilled', Cancelled: 'badge-cancelled' };
-const urgencyClass = { Critical: 'badge-critical', Urgent: 'badge-urgent', Normal: 'badge-normal' };
+const formatDistance = (m) => {
+  if (m == null) return null;
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+};
 
-const TABS = ['Post Request', 'My Requests', 'Search Donors'];
+const urgencyCfg = {
+  Critical: { badge: 'badge-critical', icon: '🚨' },
+  Urgent:   { badge: 'badge-urgent',   icon: '⚠️' },
+  Normal:   { badge: 'badge-normal',   icon: '🟢' },
+};
+const statusBadge = {
+  Pending:   'badge-pending',
+  Fulfilled: 'badge-fulfilled',
+  Cancelled: 'badge-cancelled',
+};
 
+function SkeletonRow() {
+  return (
+    <div className="card flex gap-4">
+      <div className="skeleton skeleton-circle w-12 h-12" />
+      <div className="flex-1 space-y-2">
+        <div className="skeleton skeleton-title w-1/3" />
+        <div className="skeleton skeleton-text w-1/2" />
+      </div>
+    </div>
+  );
+}
+
+/* ─── Responses Modal ─────────────────────────────────────────────────────── */
+function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
+  const responses = request.responses || [];
+  const acceptedCount = responses.filter((r) => r.status === 'Accepted').length;
+  const rejectedCount = responses.filter((r) => r.status === 'Rejected').length;
+  const pendingCount  = responses.filter((r) => r.status === 'Pending').length;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
+        style={{ animation: 'slideUp 0.2s ease-out' }}>
+
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="font-bold text-[#1A1A2E] text-lg" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              Donor Responses
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {request.bloodGroup} · {request.unitsRequired} unit(s) needed
+            </p>
+            <div className="flex gap-3 mt-1">
+              <span className="text-xs font-semibold text-amber-600">{pendingCount} pending</span>
+              <span className="text-xs font-semibold text-green-600">{acceptedCount} accepted</span>
+              <span className="text-xs font-semibold text-gray-400">{rejectedCount} rejected</span>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center
+              transition-colors text-gray-600 font-bold text-lg flex-shrink-0">
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 p-5">
+          {responses.length === 0 ? (
+            <div className="text-center py-14">
+              <div className="text-5xl mb-3">🔔</div>
+              <p className="font-semibold text-[#1A1A2E]">No responses yet</p>
+              <p className="text-sm text-gray-400 mt-1">Donors will appear here once they respond</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {responses.map((resp) => {
+                const donorId = resp.donorId?.toString?.() || String(resp.donorId);
+                const isProcessing = processingDonorId === donorId;
+                const isAccepted = resp.status === 'Accepted';
+                const isRejected = resp.status === 'Rejected';
+                const initial = resp.donorName?.trim()?.[0]?.toUpperCase() || '?';
+
+                return (
+                  <div key={resp._id || donorId}
+                    className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 ${
+                      isAccepted ? 'border-green-200 bg-green-50'
+                      : isRejected ? 'border-gray-200 bg-gray-50 opacity-60'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}>
+
+                    {/* Avatar */}
+                    <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white text-base flex-shrink-0"
+                      style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)' }}>
+                      {initial}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-[#1A1A2E] text-sm leading-snug truncate">
+                        {resp.donorName?.trim() || 'Unknown Donor'}
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                        {resp.bloodGroup && (
+                          <span className="text-xs font-bold text-[#C0162C] bg-[#FFF0F0] px-2 py-0.5 rounded-full border border-red-100">
+                            {resp.bloodGroup}
+                          </span>
+                        )}
+                        {resp.phone && (
+                          <span className="text-xs text-gray-600 font-medium">📞 {resp.phone}</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {new Date(resp.respondedAt).toLocaleString()}
+                      </p>
+                    </div>
+
+                    {/* Action area — buttons OR status badge */}
+                    <div className="flex-shrink-0">
+                      {isAccepted ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-xl
+                          bg-green-100 text-green-700 border-2 border-green-200">
+                          ✅ Accepted
+                        </span>
+                      ) : isRejected ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl
+                          bg-gray-100 text-gray-500 border-2 border-gray-200">
+                          ✗ Rejected
+                        </span>
+                      ) : request.status === 'Pending' ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => onAction(donorId, 'accept')}
+                            disabled={!!processingDonorId}
+                            className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-xl font-semibold
+                              hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            {isProcessing ? '…' : '✓ Accept'}
+                          </button>
+                          <button
+                            onClick={() => onAction(donorId, 'reject')}
+                            disabled={!!processingDonorId}
+                            className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-xl font-semibold
+                              hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            {isProcessing ? '…' : '✗ Reject'}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 pt-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
+          <p className="text-xs text-gray-400">
+            {responses.length} total · {acceptedCount} accepted · {rejectedCount} rejected
+          </p>
+          <button onClick={onClose} className="btn-secondary text-sm py-2 px-5">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Component ──────────────────────────────────────────────────────── */
 export default function HospitalDashboard() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { unreadCount } = useSocket();
 
   const [hospital, setHospital] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [activeTab, setActiveTab] = useState('Post Request');
+  const [stats, setStats] = useState(null);
 
-  // Post request form
-  const [requestForm, setRequestForm] = useState({
-    bloodGroup: 'A+', unitsRequired: 1, urgency: 'Normal', notes: ''
-  });
+  const [requestForm, setRequestForm] = useState({ bloodGroup: 'A+', unitsRequired: 1, urgency: 'Normal', notes: '' });
   const [posting, setPosting] = useState(false);
 
-  // My requests
   const [myRequests, setMyRequests] = useState([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
 
-  // Search donors
   const [donorSearch, setDonorSearch] = useState({ bloodGroup: 'A+', city: '' });
+  const [showCompatible, setShowCompatible] = useState(false);
   const [donors, setDonors] = useState([]);
   const [searchingDonors, setSearchingDonors] = useState(false);
   const [donorSearchDone, setDonorSearchDone] = useState(false);
+  const [donorLocation, setDonorLocation] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [donorRadius, setDonorRadius] = useState('10');
+  const [copiedId, setCopiedId] = useState(null);
+
+  // Inventory tab
+  const [inventory, setInventory] = useState([]);
+  const [loadingInventory, setLoadingInventory] = useState(false);
+  const [savingInventory, setSavingInventory] = useState(false);
+
+  // Blood Camps tab
+  const [camps, setCamps] = useState([]);
+  const [loadingCamps, setLoadingCamps] = useState(false);
+  const [campForm, setCampForm] = useState({
+    title: '', description: '', date: '', address: '', targetBloodGroups: [],
+  });
+  const [creatingCamp, setCreatingCamp] = useState(false);
+  const [updatingCampId, setUpdatingCampId] = useState(null);
+
+  // Responses modal
+  const [viewingRequestId, setViewingRequestId] = useState(null);
+  const [processingDonorId, setProcessingDonorId] = useState(null);
+  const viewingRequest = viewingRequestId ? myRequests.find((r) => r._id === viewingRequestId) : null;
 
   const fetchProfile = async () => {
     try {
       const { data } = await api.get('/hospital/profile');
       setHospital(data.data.hospital);
-    } catch {
-      toast.error('Failed to load hospital profile');
-    } finally {
-      setLoadingProfile(false);
-    }
+    } catch { toast.error('Failed to load hospital profile'); }
+    finally { setLoadingProfile(false); }
   };
 
   const fetchMyRequests = async () => {
     setLoadingRequests(true);
     try {
       const { data } = await api.get('/hospital/requests');
-      setMyRequests(data.data.requests);
-    } catch {
-      toast.error('Failed to load your requests');
-    } finally {
-      setLoadingRequests(false);
-    }
+      const reqs = data.data.requests;
+      setMyRequests(reqs);
+      setStats({
+        total: reqs.length,
+        open: reqs.filter((r) => r.status === 'Pending').length,
+        fulfilled: reqs.filter((r) => r.status === 'Fulfilled').length,
+        responses: reqs.reduce((s, r) => s + (r.responses?.length || 0), 0),
+      });
+    } catch { toast.error('Failed to load your requests'); }
+    finally { setLoadingRequests(false); }
   };
 
-  useEffect(() => { fetchProfile(); }, []);
+  const fetchInventory = async () => {
+    setLoadingInventory(true);
+    try {
+      const { data } = await api.get('/hospital/inventory');
+      setInventory(data.data.inventory.inventory || []);
+    } catch { toast.error('Failed to load inventory'); }
+    finally { setLoadingInventory(false); }
+  };
 
+  const fetchCamps = async () => {
+    setLoadingCamps(true);
+    try {
+      const { data } = await api.get('/camps/mine');
+      setCamps(data.data.camps || []);
+    } catch { toast.error('Failed to load camps'); }
+    finally { setLoadingCamps(false); }
+  };
+
+  useEffect(() => { fetchProfile(); fetchMyRequests(); }, []);
   useEffect(() => {
     if (activeTab === 'My Requests') fetchMyRequests();
+    if (activeTab === 'Inventory') fetchInventory();
+    if (activeTab === 'Blood Camps') fetchCamps();
   }, [activeTab]);
-
 
   const handlePostRequest = async (e) => {
     e.preventDefault();
-    if (requestForm.unitsRequired < 1) {
-      toast.error('Units required must be at least 1');
-      return;
-    }
+    if (requestForm.unitsRequired < 1) { toast.error('Units required must be at least 1'); return; }
     setPosting(true);
     try {
       await api.post('/hospital/request', requestForm);
-      toast.success('Blood request posted successfully!');
+      toast.success('Blood request posted! Donors are being notified.');
       setRequestForm({ bloodGroup: 'A+', unitsRequired: 1, urgency: 'Normal', notes: '' });
       setActiveTab('My Requests');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to post request');
-    } finally {
-      setPosting(false);
-    }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to post request'); }
+    finally { setPosting(false); }
   };
 
   const handleUpdateStatus = async (requestId, status) => {
     try {
       await api.put(`/hospital/request/${requestId}`, { status });
       toast.success(`Request marked as ${status}`);
+      fetchMyRequests(); // Refetch to get fulfilledBy + updated data
+    } catch { toast.error('Failed to update status'); }
+  };
+
+  const handleDonorAction = async (donorId, action) => {
+    setProcessingDonorId(donorId);
+    try {
+      await api.put(`/hospital/request/${viewingRequestId}/response/${donorId}`, { action });
+      const newStatus = action === 'accept' ? 'Accepted' : 'Rejected';
+      toast.success(action === 'accept' ? 'Donor accepted and notified!' : 'Response rejected.');
+      // Update local state — viewingRequest is derived so it auto-updates
       setMyRequests((prev) =>
-        prev.map((r) => (r._id === requestId ? { ...r, status } : r))
+        prev.map((r) =>
+          r._id === viewingRequestId
+            ? {
+                ...r,
+                responses: r.responses.map((resp) =>
+                  resp.donorId?.toString() === donorId ? { ...resp, status: newStatus } : resp
+                ),
+              }
+            : r
+        )
       );
-    } catch {
-      toast.error('Failed to update status');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update response');
+    } finally {
+      setProcessingDonorId(null);
     }
+  };
+
+  const handleGetDonorLocation = () => {
+    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setDonorLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocating(false); toast.success('Location detected'); },
+      () => { setLocating(false); toast.error('Could not get location.'); },
+      { timeout: 10000 }
+    );
   };
 
   const handleSearchDonors = async (e) => {
-    e.preventDefault();
-    setSearchingDonors(true);
-    setDonorSearchDone(false);
+    e.preventDefault(); setSearchingDonors(true); setDonorSearchDone(false);
     try {
       const params = { bloodGroup: donorSearch.bloodGroup };
-      if (donorSearch.city.trim()) params.city = donorSearch.city.trim();
+      if (showCompatible) params.compatible = 'true';
+      if (donorLocation) { params.lat = donorLocation.lat; params.lng = donorLocation.lng; params.radius = donorRadius; }
+      else if (donorSearch.city.trim()) { params.city = donorSearch.city.trim(); }
       const { data } = await api.get('/hospital/donors', { params });
-      setDonors(data.data.donors);
-      setDonorSearchDone(true);
-    } catch {
-      toast.error('Failed to search donors');
-    } finally {
-      setSearchingDonors(false);
+      setDonors(data.data.donors); setDonorSearchDone(true);
+    } catch { toast.error('Failed to search donors'); }
+    finally { setSearchingDonors(false); }
+  };
+
+  const handleSaveInventory = async () => {
+    setSavingInventory(true);
+    try {
+      await api.put('/hospital/inventory', { inventory });
+      toast.success('Inventory saved!');
+    } catch { toast.error('Failed to save inventory'); }
+    finally { setSavingInventory(false); }
+  };
+
+  const handleInventoryChange = (bloodGroup, value) => {
+    setInventory((prev) =>
+      prev.map((item) =>
+        item.bloodGroup === bloodGroup ? { ...item, units: Math.max(0, parseInt(value) || 0) } : item
+      )
+    );
+  };
+
+  const handleCreateCamp = async (e) => {
+    e.preventDefault();
+    if (campForm.targetBloodGroups.length === 0) {
+      toast.error('Select at least one target blood group'); return;
     }
+    setCreatingCamp(true);
+    try {
+      await api.post('/camps', campForm);
+      toast.success('Blood camp created! Donors are being notified.');
+      setCampForm({ title: '', description: '', date: '', address: '', targetBloodGroups: [] });
+      fetchCamps();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to create camp'); }
+    finally { setCreatingCamp(false); }
+  };
+
+  const handleCampStatusUpdate = async (campId, status) => {
+    setUpdatingCampId(campId);
+    try {
+      await api.put(`/camps/${campId}/status`, { status });
+      toast.success(`Camp marked as ${status}`);
+      fetchCamps();
+    } catch { toast.error('Failed to update camp status'); }
+    finally { setUpdatingCampId(null); }
+  };
+
+  const toggleTargetGroup = (bg) => {
+    setCampForm((prev) => ({
+      ...prev,
+      targetBloodGroups: prev.targetBloodGroups.includes(bg)
+        ? prev.targetBloodGroups.filter((g) => g !== bg)
+        : [...prev.targetBloodGroups, bg],
+    }));
+  };
+
+  const handleCopyLink = (reqId) => {
+    navigator.clipboard.writeText(`${window.location.origin}/request/${reqId}`);
+    setCopiedId(reqId);
+    toast.success('Shareable link copied!');
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-      {/* Header */}
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+
+      {/* Responses modal */}
+      {viewingRequest && (
+        <ResponsesModal
+          request={viewingRequest}
+          onClose={() => setViewingRequestId(null)}
+          onAction={handleDonorAction}
+          processingDonorId={processingDonorId}
+        />
+      )}
+
+      {/* ─── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Hospital Dashboard</h1>
-          <p className="text-gray-500 text-sm">
-            {loadingProfile ? '…' : hospital?.hospitalName || user?.name}
+          <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            Hospital Dashboard
+          </h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            <span className="font-semibold text-[#C0162C]">{loadingProfile ? '…' : hospital?.hospitalName || user?.name}</span>
           </p>
         </div>
-        <Link to="/notifications" className="btn-secondary text-sm flex items-center gap-1">
+        <Link to="/notifications"
+          className="relative inline-flex items-center gap-2 bg-white border-2 border-gray-200 text-[#1A1A2E] px-4 py-2.5 rounded-xl font-semibold text-sm hover:border-[#C0162C] hover:text-[#C0162C] transition-all duration-200">
           🔔 Notifications
           {unreadCount > 0 && (
-            <span className="bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+            <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
+              style={{ background: '#C0162C' }}>
               {unreadCount}
             </span>
           )}
         </Link>
       </div>
 
-      {/* Profile Card */}
+      {/* ─── Profile Card ─────────────────────────────────────────────────── */}
       {!loadingProfile && hospital && (
-        <div className="card">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-2xl">
-              🏥
-            </div>
-            <div className="flex-1">
-              <p className="font-bold text-gray-800 text-lg">{hospital.hospitalName}</p>
-              <p className="text-gray-500 text-sm">{hospital.address}</p>
-              <p className="text-gray-400 text-xs mt-0.5">
-                Reg. No: {hospital.licenseNumber} · Emergency: {hospital.emergencyContact}
-              </p>
+        <div className="rounded-2xl overflow-hidden shadow-md" style={{ animation: 'fadeInUp 0.35s ease-out' }}>
+          <div className="px-6 pt-6 pb-6"
+            style={{ background: 'linear-gradient(135deg, #1A1A2E 0%, #2d1b4e 45%, #C0162C 100%)' }}>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
+                style={{
+                  background: 'rgba(255,255,255,0.15)',
+                  backdropFilter: 'blur(8px)',
+                  border: '2px solid rgba(255,255,255,0.5)',
+                }}>
+                🏥
+              </div>
+              <div className="min-w-0 flex flex-col gap-1">
+                <h2 className="font-bold text-white text-xl leading-tight truncate"
+                  style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {hospital.hospitalName}
+                </h2>
+                <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                  📍 {hospital.address}
+                </p>
+                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                  Reg: {hospital.licenseNumber} · 📞 {hospital.emergencyContact}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tabs */}
-      <div>
-        <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                activeTab === tab
-                  ? 'border-red-600 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab === 'Post Request' && '🩸 '}
-              {tab === 'My Requests' && '📋 '}
-              {tab === 'Search Donors' && '🔍 '}
-              {tab}
-            </button>
+      {/* ─── Stats Row ────────────────────────────────────────────────────── */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Requests',  value: stats.total,     icon: '📋', accentColor: '#3b82f6', iconBg: '#eff6ff' },
+            { label: 'Open Requests',   value: stats.open,      icon: '🩸', accentColor: '#C0162C', iconBg: '#FFF0F0' },
+            { label: 'Fulfilled',       value: stats.fulfilled, icon: '✅', accentColor: '#16a34a', iconBg: '#f0fdf4' },
+            { label: 'Total Responses', value: stats.responses, icon: '🤝', accentColor: '#7c3aed', iconBg: '#f5f3ff' },
+          ].map((s) => (
+            <div key={s.label} className="bg-white rounded-2xl p-4 flex items-center gap-4"
+              style={{
+                boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+                borderLeft: `4px solid ${s.accentColor}`,
+                animation: 'fadeInUp 0.35s ease-out',
+              }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: s.iconBg }}>
+                {s.icon}
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-[#1A1A2E] leading-none"
+                  style={{ fontSize: '2rem', fontFamily: 'Poppins, sans-serif' }}>
+                  {s.value}
+                </p>
+                <p className="font-medium text-gray-500 mt-0.5 truncate" style={{ fontSize: '0.75rem' }}>
+                  {s.label}
+                </p>
+              </div>
+            </div>
           ))}
         </div>
+      )}
 
-        {/* Post Request Tab */}
-        {activeTab === 'Post Request' && (
-          <div className="card max-w-xl">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">Post a Blood Request</h2>
+      {/* ─── Tabs ─────────────────────────────────────────────────────────── */}
+      <div className="flex border-b-2 border-gray-100 gap-0 overflow-x-auto">
+        {[
+          { id: 'Post Request',  icon: '🩸' },
+          { id: 'My Requests',   icon: '📋' },
+          { id: 'Search Donors', icon: '🔍' },
+          { id: 'Inventory',     icon: '🏦' },
+          { id: 'Blood Camps',   icon: '⛺' },
+        ].map(({ id, icon }) => (
+          <button key={id} onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-1.5 px-6 py-3.5 text-sm whitespace-nowrap transition-all duration-200 border-b-2 -mb-0.5 ${
+              activeTab === id
+                ? 'border-[#C0162C] text-[#C0162C] font-bold'
+                : 'border-transparent text-gray-500 font-medium hover:text-[#1A1A2E] hover:bg-gray-50'
+            }`}>
+            {icon} {id}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── Post Request Tab ─────────────────────────────────────────────── */}
+      {activeTab === 'Post Request' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* Form */}
+          <div className="lg:col-span-2 card">
+            <h2 className="text-lg font-bold text-[#1A1A2E] mb-5" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              🩸 Post a Blood Request
+            </h2>
             <form onSubmit={handlePostRequest} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
-                  <select
-                    value={requestForm.bloodGroup}
-                    onChange={(e) => setRequestForm({ ...requestForm, bloodGroup: e.target.value })}
-                    className="input-field"
-                  >
+                  <label className="input-label">Blood Group</label>
+                  <select value={requestForm.bloodGroup}
+                    onChange={(e) => setRequestForm({ ...requestForm, bloodGroup: e.target.value })} className="input-field">
                     {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Units Required</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={requestForm.unitsRequired}
-                    onChange={(e) => setRequestForm({ ...requestForm, unitsRequired: parseInt(e.target.value) })}
-                    className="input-field"
-                  />
+                  <label className="input-label">Units Required</label>
+                  <input type="number" min={1} value={requestForm.unitsRequired}
+                    onChange={(e) => setRequestForm({ ...requestForm, unitsRequired: parseInt(e.target.value) || 1 })}
+                    className="input-field" />
                 </div>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Urgency Level</label>
-                <select
-                  value={requestForm.urgency}
-                  onChange={(e) => setRequestForm({ ...requestForm, urgency: e.target.value })}
-                  className="input-field"
-                >
-                  {URGENCY_LEVELS.map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <label className="input-label">Urgency Level</label>
+                <div className="flex gap-2 mt-1">
+                  {URGENCY_LEVELS.map((u) => (
+                    <button key={u} type="button" onClick={() => setRequestForm({ ...requestForm, urgency: u })}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border-2 ${
+                        requestForm.urgency === u
+                          ? u === 'Critical' ? 'bg-red-50 border-[#C0162C] text-[#C0162C]'
+                            : u === 'Urgent' ? 'bg-orange-50 border-orange-500 text-orange-600'
+                            : 'bg-green-50 border-green-500 text-green-700'
+                          : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}>
+                      {u === 'Critical' ? '🚨' : u === 'Urgent' ? '⚠️' : '🟢'} {u}
+                    </button>
+                  ))}
+                </div>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes (optional)</label>
-                <textarea
-                  value={requestForm.notes}
+                <label className="input-label">Notes (optional)</label>
+                <textarea value={requestForm.notes}
                   onChange={(e) => setRequestForm({ ...requestForm, notes: e.target.value })}
-                  rows={3}
-                  placeholder="Patient condition, special requirements, etc."
-                  className="input-field resize-none"
-                />
+                  rows={3} placeholder="Patient condition, special requirements…" className="input-field resize-none" />
               </div>
+
               {(requestForm.urgency === 'Critical' || requestForm.urgency === 'Urgent') && (
-                <p className="text-xs text-red-600 bg-red-50 p-3 rounded-lg">
-                  ⚡ All available matching donors will be notified immediately via real-time alerts.
-                </p>
+                <div className="flex items-start gap-3 bg-red-50 border-2 border-[#C0162C]/30 rounded-xl p-3">
+                  <span className="text-[#C0162C] mt-0.5">⚡</span>
+                  <p className="text-sm text-[#C0162C] font-medium">
+                    All donors with matching blood group will be notified immediately via real-time alerts.
+                  </p>
+                </div>
               )}
-              <button type="submit" disabled={posting} className="btn-primary w-full py-2.5">
-                {posting ? 'Posting…' : 'Post Blood Request'}
+
+              <button type="submit" disabled={posting}
+                className="w-full py-3.5 rounded-xl font-bold text-white text-base transition-all duration-200
+                  disabled:opacity-60 disabled:cursor-not-allowed hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', boxShadow: '0 4px 15px rgba(192,22,44,0.25)' }}>
+                {posting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Posting…
+                  </span>
+                ) : '🩸 Post Blood Request'}
               </button>
             </form>
           </div>
-        )}
 
-        {/* My Requests Tab */}
-        {activeTab === 'My Requests' && (
-          <div>
-            {loadingRequests ? (
-              <div className="text-center py-12 text-gray-400">Loading your requests…</div>
-            ) : myRequests.length === 0 ? (
-              <div className="card text-center py-12">
-                <div className="text-4xl mb-3">📋</div>
-                <p className="text-gray-500">No blood requests posted yet</p>
-                <button onClick={() => setActiveTab('Post Request')} className="btn-primary mt-4 text-sm">
-                  Post First Request
-                </button>
+          {/* Right panel: tips + summary */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            <div className="card" style={{ borderLeft: '4px solid #C0162C' }}>
+              <h3 className="font-bold text-[#1A1A2E] mb-3 text-sm" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                💡 Tips for a Good Request
+              </h3>
+              <ul className="space-y-2.5 text-sm text-gray-600">
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">🩸</span>
+                  <span>Double-check the blood group before posting</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">⚡</span>
+                  <span>Use <strong className="text-[#C0162C]">Critical</strong> only for emergencies — all matched donors get instant alerts</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">📝</span>
+                  <span>Add patient condition in Notes to help donors decide quickly</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">✅</span>
+                  <span>Mark as <strong>Fulfilled</strong> once you have enough donors</span>
+                </li>
+              </ul>
+            </div>
+
+            {stats && (
+              <div className="card">
+                <h3 className="font-bold text-[#1A1A2E] mb-3 text-sm" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  📊 Your Request Summary
+                </h3>
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'Total Posted',   value: stats.total,     color: '#1A1A2E' },
+                    { label: 'Active Now',      value: stats.open,      color: '#C0162C' },
+                    { label: 'Fulfilled',       value: stats.fulfilled, color: '#16a34a' },
+                    { label: 'Donor Responses', value: stats.responses, color: '#7c3aed' },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">{row.label}</span>
+                      <span className="font-bold text-sm" style={{ color: row.color }}>{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── My Requests Tab ──────────────────────────────────────────────── */}
+      {activeTab === 'My Requests' && (
+        <div>
+          {loadingRequests ? (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>
+          ) : myRequests.length === 0 ? (
+            <div className="card text-center py-16">
+              <div className="text-5xl mb-4">📋</div>
+              <h3 className="font-bold text-[#1A1A2E] mb-2">No Requests Yet</h3>
+              <p className="text-gray-400 text-sm mb-6">Post your first blood request to find matching donors</p>
+              <button onClick={() => setActiveTab('Post Request')} className="btn-primary text-sm">
+                Post First Request →
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {myRequests.map((req) => {
+                const cfg = urgencyCfg[req.urgency] || urgencyCfg.Normal;
+                const hasAccepted = req.responses?.some((r) => r.status === 'Accepted');
+                const responseCount = req.responses?.length || 0;
+                return (
+                  <div key={req._id} className="card hover:shadow-md transition-all duration-200">
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+
+                      {/* Blood group avatar + info */}
+                      <div className="flex items-start gap-4 flex-1 min-w-0">
+                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg flex-shrink-0"
+                          style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', fontFamily: 'Poppins, sans-serif' }}>
+                          {req.bloodGroup}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className={cfg.badge}>{cfg.icon} {req.urgency}</span>
+                            <span className={statusBadge[req.status]}>{req.status}</span>
+                            {hasAccepted && req.status === 'Pending' && (
+                              <span className="badge-fulfilled">✓ Donor Accepted</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 font-medium">
+                            {req.unitsRequired} unit(s) · {responseCount} donor(s) responded
+                          </p>
+                          {req.status === 'Fulfilled' && req.fulfilledBy?.donorName && (
+                            <p className="text-xs text-green-600 font-semibold mt-0.5">
+                              ✅ Fulfilled by {req.fulfilledBy.donorName}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">{new Date(req.createdAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+
+                      {req.notes && (
+                        <p className="text-gray-500 text-xs sm:flex-1 sm:max-w-[200px] border-l-2 border-gray-200 pl-3 truncate">
+                          {req.notes}
+                        </p>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+                        {/* View responses button */}
+                        <button
+                          onClick={() => setViewingRequestId(req._id)}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 text-xs font-semibold transition-all duration-200 ${
+                            responseCount > 0
+                              ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                              : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
+                          }`}>
+                          👥 {responseCount}
+                        </button>
+
+                        <button onClick={() => handleCopyLink(req._id)}
+                          className={`p-2.5 rounded-xl border-2 text-sm transition-all duration-200 ${
+                            copiedId === req._id
+                              ? 'bg-green-50 border-green-300 text-green-700'
+                              : 'bg-white border-gray-200 text-gray-500 hover:border-[#C0162C] hover:text-[#C0162C]'
+                          }`}
+                          title="Copy shareable link">
+                          {copiedId === req._id ? '✓' : '🔗'}
+                        </button>
+
+                        {req.status === 'Pending' && (
+                          <>
+                            <button onClick={() => handleUpdateStatus(req._id, 'Fulfilled')}
+                              className="text-xs px-3 py-2 bg-green-100 text-green-700 border-2 border-green-200 rounded-xl hover:bg-green-200 font-semibold transition-all duration-200">
+                              ✓ Fulfilled
+                            </button>
+                            <button onClick={() => handleUpdateStatus(req._id, 'Cancelled')}
+                              className="text-xs px-3 py-2 bg-gray-100 text-gray-600 border-2 border-gray-200 rounded-xl hover:bg-gray-200 font-semibold transition-all duration-200">
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Inventory Tab ────────────────────────────────────────────────── */}
+      {activeTab === 'Inventory' && (
+        <div className="max-w-2xl">
+          <div className="card">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                🏦 Blood Inventory
+              </h2>
+              <button onClick={handleSaveInventory} disabled={savingInventory || loadingInventory}
+                className="btn-primary text-sm py-2 px-5 disabled:opacity-60">
+                {savingInventory ? 'Saving…' : 'Save Inventory'}
+              </button>
+            </div>
+
+            {loadingInventory ? (
+              <div className="space-y-3">
+                {BLOOD_GROUPS.map((bg) => (
+                  <div key={bg} className="skeleton h-12 rounded-xl" />
+                ))}
               </div>
             ) : (
               <div className="space-y-3">
-                {myRequests.map((req) => (
-                  <div key={req._id} className="card flex flex-col sm:flex-row sm:items-center gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center font-bold text-red-600">
-                        {req.bloodGroup}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={urgencyClass[req.urgency]}>{req.urgency}</span>
-                          <span className={statusBadge[req.status]}>{req.status}</span>
-                        </div>
-                        <p className="text-sm text-gray-600 mt-0.5">
-                          {req.unitsRequired} unit(s) · {req.responses?.length || 0} donor(s) responded
-                        </p>
-                        <p className="text-xs text-gray-400">{new Date(req.createdAt).toLocaleString()}</p>
-                      </div>
+                {inventory.map((item) => (
+                  <div key={item.bloodGroup}
+                    className="flex items-center gap-4 p-3 rounded-xl border-2 border-gray-100 hover:border-gray-200 transition-colors">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0"
+                      style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', fontFamily: 'Poppins, sans-serif' }}>
+                      {item.bloodGroup}
                     </div>
-
-                    {req.notes && (
-                      <p className="text-gray-500 text-xs flex-1 border-l-2 border-gray-200 pl-3">{req.notes}</p>
-                    )}
-
-                    {req.status === 'Pending' && (
-                      <div className="flex gap-2 ml-auto flex-shrink-0">
-                        <button
-                          onClick={() => handleUpdateStatus(req._id, 'Fulfilled')}
-                          className="text-xs px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 font-medium"
-                        >
-                          Mark Fulfilled
-                        </button>
-                        <button
-                          onClick={() => handleUpdateStatus(req._id, 'Cancelled')}
-                          className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-medium"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-[#1A1A2E]">{item.bloodGroup}</p>
+                      <p className="text-xs text-gray-400">
+                        {item.lastUpdated ? `Updated ${new Date(item.lastUpdated).toLocaleDateString()}` : 'Never updated'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min={0} max={10000}
+                        value={item.units}
+                        onChange={(e) => handleInventoryChange(item.bloodGroup, e.target.value)}
+                        className="input-field w-24 text-center font-bold text-[#1A1A2E]"
+                        style={{ padding: '8px' }}
+                      />
+                      <span className="text-sm text-gray-500">units</span>
+                    </div>
+                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                      item.units === 0 ? 'bg-red-500' : item.units < 5 ? 'bg-orange-400' : 'bg-green-500'
+                    }`} title={item.units === 0 ? 'Critical' : item.units < 5 ? 'Low' : 'OK'} />
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
 
-        {/* Search Donors Tab */}
-        {activeTab === 'Search Donors' && (
-          <div>
-            <form onSubmit={handleSearchDonors} className="card max-w-xl mb-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">Find Available Donors</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
-                  <select
-                    value={donorSearch.bloodGroup}
-                    onChange={(e) => setDonorSearch({ ...donorSearch, bloodGroup: e.target.value })}
-                    className="input-field"
-                  >
-                    {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">City (optional)</label>
-                  <input
-                    type="text"
-                    value={donorSearch.city}
-                    onChange={(e) => setDonorSearch({ ...donorSearch, city: e.target.value })}
-                    placeholder="e.g. Hyderabad"
-                    className="input-field"
-                  />
+            <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <div className="w-3 h-3 rounded-full bg-red-500" /> Critical (0 units)
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <div className="w-3 h-3 rounded-full bg-orange-400" /> Low (&lt;5 units)
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <div className="w-3 h-3 rounded-full bg-green-500" /> OK (5+ units)
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Blood Camps Tab ──────────────────────────────────────────────── */}
+      {activeTab === 'Blood Camps' && (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+          {/* Create Camp Form */}
+          <div className="lg:col-span-2 card self-start">
+            <h2 className="text-lg font-bold text-[#1A1A2E] mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              ⛺ Create Blood Camp
+            </h2>
+            <form onSubmit={handleCreateCamp} className="space-y-4">
+              <div>
+                <label className="input-label">Camp Title</label>
+                <input type="text" value={campForm.title} required maxLength={200}
+                  onChange={(e) => setCampForm({ ...campForm, title: e.target.value })}
+                  placeholder="e.g. Ramadan Blood Drive 2026" className="input-field" />
+              </div>
+              <div>
+                <label className="input-label">Date & Time</label>
+                <input type="datetime-local" value={campForm.date} required
+                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                  onChange={(e) => setCampForm({ ...campForm, date: e.target.value })}
+                  className="input-field" />
+              </div>
+              <div>
+                <label className="input-label">Location / Address</label>
+                <input type="text" value={campForm.address} required
+                  onChange={(e) => setCampForm({ ...campForm, address: e.target.value })}
+                  placeholder="Hall, Street, City" className="input-field" />
+              </div>
+              <div>
+                <label className="input-label">Description (optional)</label>
+                <textarea value={campForm.description} rows={2} maxLength={1000}
+                  onChange={(e) => setCampForm({ ...campForm, description: e.target.value })}
+                  placeholder="Free refreshments, walk-ins welcome…" className="input-field resize-none" />
+              </div>
+              <div>
+                <label className="input-label mb-2">Target Blood Groups</label>
+                <div className="flex flex-wrap gap-2">
+                  {BLOOD_GROUPS.map((bg) => (
+                    <button key={bg} type="button" onClick={() => toggleTargetGroup(bg)}
+                      className={`px-3 py-1.5 rounded-xl text-sm font-bold border-2 transition-all duration-200 ${
+                        campForm.targetBloodGroups.includes(bg)
+                          ? 'bg-[#C0162C] border-[#C0162C] text-white'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-[#C0162C]'
+                      }`}>
+                      {bg}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <button type="submit" disabled={searchingDonors} className="btn-primary w-full">
-                {searchingDonors ? 'Searching…' : 'Search Donors'}
+              <button type="submit" disabled={creatingCamp}
+                className="w-full py-3 rounded-xl font-bold text-white text-sm transition-all duration-200 disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)' }}>
+                {creatingCamp ? 'Creating…' : '⛺ Create Camp'}
               </button>
             </form>
+          </div>
 
-            {donorSearchDone && (
-              donors.length === 0 ? (
-                <div className="card text-center py-10">
-                  <div className="text-4xl mb-3">😔</div>
-                  <p className="text-gray-500">No available donors found for this criteria</p>
+          {/* Camp List */}
+          <div className="lg:col-span-3">
+            <h2 className="text-base font-bold text-[#1A1A2E] mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              My Blood Camps ({camps.length})
+            </h2>
+            {loadingCamps ? (
+              <div className="space-y-3">{[1, 2].map((i) => <SkeletonRow key={i} />)}</div>
+            ) : camps.length === 0 ? (
+              <div className="card text-center py-14">
+                <div className="text-5xl mb-3">⛺</div>
+                <p className="font-semibold text-[#1A1A2E]">No Camps Yet</p>
+                <p className="text-sm text-gray-400 mt-1">Create your first blood donation camp</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {camps.map((camp) => {
+                  const sc = CAMP_STATUS_COLORS[camp.status] || CAMP_STATUS_COLORS.Upcoming;
+                  return (
+                    <div key={camp._id} className="card hover:shadow-md transition-all duration-200">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <h3 className="font-bold text-[#1A1A2E] text-sm">{camp.title}</h3>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${sc.bg} ${sc.text} ${sc.border}`}>
+                              {camp.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500">📅 {new Date(camp.date).toLocaleString()}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">📍 {camp.address}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {camp.targetBloodGroups?.map((bg) => (
+                              <span key={bg} className="text-xs font-bold px-2 py-0.5 rounded-full"
+                                style={{ background: '#FFF0F0', color: '#C0162C', border: '1px solid #ffcdd2' }}>
+                                {bg}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">{camp.registrations?.length || 0} registered</p>
+                        </div>
+
+                        {camp.status === 'Upcoming' && (
+                          <div className="flex flex-col gap-1.5 flex-shrink-0">
+                            <button onClick={() => handleCampStatusUpdate(camp._id, 'Ongoing')}
+                              disabled={updatingCampId === camp._id}
+                              className="text-xs px-3 py-1.5 bg-green-50 border-2 border-green-200 text-green-700 rounded-xl font-semibold hover:bg-green-100 transition-colors disabled:opacity-50">
+                              Start
+                            </button>
+                            <button onClick={() => handleCampStatusUpdate(camp._id, 'Cancelled')}
+                              disabled={updatingCampId === camp._id}
+                              className="text-xs px-3 py-1.5 bg-gray-50 border-2 border-gray-200 text-gray-600 rounded-xl font-semibold hover:bg-gray-100 transition-colors disabled:opacity-50">
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+                        {camp.status === 'Ongoing' && (
+                          <button onClick={() => handleCampStatusUpdate(camp._id, 'Completed')}
+                            disabled={updatingCampId === camp._id}
+                            className="text-xs px-3 py-1.5 bg-blue-50 border-2 border-blue-200 text-blue-700 rounded-xl font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50 flex-shrink-0">
+                            Complete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Search Donors Tab ────────────────────────────────────────────── */}
+      {activeTab === 'Search Donors' && (
+        <div>
+          <form onSubmit={handleSearchDonors} className="card max-w-xl mb-6">
+            <h2 className="text-lg font-bold text-[#1A1A2E] mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              🔍 Find Available Donors
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="input-label">Blood Group</label>
+                <select value={donorSearch.bloodGroup}
+                  onChange={(e) => setDonorSearch({ ...donorSearch, bloodGroup: e.target.value })} className="input-field">
+                  {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
+                </select>
+              </div>
+              {!donorLocation ? (
+                <div>
+                  <label className="input-label">City (optional)</label>
+                  <input type="text" value={donorSearch.city}
+                    onChange={(e) => setDonorSearch({ ...donorSearch, city: e.target.value })}
+                    placeholder="e.g. Hyderabad" className="input-field" />
                 </div>
               ) : (
                 <div>
-                  <p className="text-sm text-gray-500 mb-3">{donors.length} donor(s) found</p>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {donors.map((donor) => (
-                      <div key={donor._id} className="card flex items-start gap-3">
-                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center font-bold text-red-600 flex-shrink-0">
-                          {donor.bloodGroup}
+                  <label className="input-label">Search Radius</label>
+                  <select value={donorRadius} onChange={(e) => setDonorRadius(e.target.value)} className="input-field">
+                    {RADIUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mb-4">
+              <button type="button" onClick={handleGetDonorLocation} disabled={locating}
+                className={`flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all duration-200 border-2 ${
+                  donorLocation ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:border-[#C0162C] hover:text-[#C0162C]'
+                }`}>
+                {locating ? '⌛ Locating…' : donorLocation ? '📍 Location Set' : '📍 Use My Location'}
+              </button>
+              {donorLocation && (
+                <button type="button" onClick={() => setDonorLocation(null)}
+                  className="text-sm py-2.5 px-4 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 font-semibold border-2 border-gray-200 transition-all duration-200">
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {donorLocation && (
+              <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-3 py-2 rounded-xl mb-4">
+                📍 Will search within <strong>{donorRadius} km</strong> of your location
+              </div>
+            )}
+
+            {/* Compatible types toggle */}
+            <button type="button" onClick={() => setShowCompatible((v) => !v)}
+              className={`w-full mb-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all duration-200 flex items-center justify-center gap-2 ${
+                showCompatible
+                  ? 'bg-blue-50 border-blue-400 text-blue-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-blue-300'
+              }`}>
+              {showCompatible ? '✓' : '+'} Include Compatible Blood Types
+              {showCompatible && <span className="text-xs opacity-70">(also shows donors who can donate to {donorSearch.bloodGroup})</span>}
+            </button>
+
+            <button type="submit" disabled={searchingDonors} className="btn-primary w-full py-3">
+              {searchingDonors ? (
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  Searching…
+                </span>
+              ) : 'Search Donors →'}
+            </button>
+          </form>
+
+          {donorSearchDone && (
+            donors.length === 0 ? (
+              <div className="card text-center py-16">
+                <div className="text-5xl mb-4">😔</div>
+                <h3 className="font-bold text-[#1A1A2E] mb-2">No Donors Found</h3>
+                <p className="text-gray-400 text-sm">
+                  {donorLocation ? `No available donors within ${donorRadius} km` : 'No available donors match this criteria'}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-gray-500 mb-4 font-medium">
+                  {donors.length} donor(s) available
+                </p>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {donors.map((donor) => (
+                    <div key={donor._id} className="card-hover flex items-start gap-4">
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg flex-shrink-0"
+                        style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', fontFamily: 'Poppins, sans-serif' }}>
+                        {donor.bloodGroup}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-bold text-[#1A1A2E] text-sm truncate">{donor.user?.name || 'Donor'}</p>
+                          {donor.distance != null && (
+                            <span className="text-xs text-blue-600 font-semibold flex-shrink-0">
+                              📍 {formatDistance(donor.distance)}
+                            </span>
+                          )}
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-gray-800 truncate">
-                            {donor.user?.name || 'Donor'}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">{donor.address}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">📞 {donor.user?.phone || 'N/A'}</p>
-                          <span className="inline-block mt-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                            Available
-                          </span>
+                        <p className="text-xs text-gray-500 truncate mt-0.5">{donor.address}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">📞 {donor.user?.phone || 'N/A'}</p>
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          <span className="badge-normal">✅ Available</span>
+                          {showCompatible && donor.bloodGroup !== donorSearch.bloodGroup && (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                              ✓ Compatible
+                            </span>
+                          )}
+                          {donor.totalDonations > 0 && (
+                            <span className="text-xs text-gray-400">{donor.totalDonations} donation{donor.totalDonations !== 1 ? 's' : ''}</span>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
-              )
-            )}
-          </div>
-        )}
-      </div>
+              </div>
+            )
+          )}
+        </div>
+      )}
     </div>
   );
 }
