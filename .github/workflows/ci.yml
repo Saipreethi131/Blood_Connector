@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend — Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+    env:
+      JWT_SECRET: test_jwt_secret_for_ci
+      JWT_REFRESH_SECRET: test_refresh_secret_for_ci
+      VAPID_EMAIL: mailto:test@test.com
+      VAPID_PUBLIC_KEY: BERUVkTV2y7EpBYh0Z9mEMUgAieACjKKUD234fnHSbnA0b-P7NR_tuia85uhKXgb4_qzVtfmglL3CsAtii1pG2Y
+      VAPID_PRIVATE_KEY: TLFd1CUmjYG3TA9e0cbiTiQrrToaCnnycoR-8_3QlwM
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Backend/package-lock.json
+      - run: npm ci
+      - run: node test_features.js
+
+  frontend:
+    name: Frontend — Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_API_URL: http://localhost:5000
