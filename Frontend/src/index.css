@@ -4,39 +4,257 @@
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-800 antialiased;
+    background-color: #FAFAFA;
+    color: #1A1A2E;
+    -webkit-font-smoothing: antialiased;
+    font-family: 'Inter', sans-serif;
   }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', sans-serif;
+  }
+  * { box-sizing: border-box; }
 }
 
+/* ─── Buttons ──────────────────────────────────────────────────────── */
 @layer components {
   .btn-primary {
-    @apply bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2
+           bg-[#C0162C] text-white px-5 py-2.5 rounded-xl font-semibold
+           transition-all duration-200
+           hover:bg-[#a01225] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-red-200/60
+           active:translate-y-0 active:shadow-none
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none;
   }
   .btn-secondary {
-    @apply bg-white text-red-600 border border-red-600 px-4 py-2 rounded-lg font-medium hover:bg-red-50 transition-colors;
+    @apply inline-flex items-center justify-center gap-2
+           bg-white text-[#C0162C] border-2 border-[#C0162C] px-5 py-2.5 rounded-xl font-semibold
+           transition-all duration-200
+           hover:bg-[#FFF0F0] hover:-translate-y-0.5 hover:shadow-md
+           active:translate-y-0;
   }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 text-gray-600 px-4 py-2 rounded-xl font-medium
+           hover:bg-gray-100 transition-all duration-200;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           bg-[#C0162C] text-white px-4 py-2 rounded-xl font-semibold
+           hover:bg-[#8B0000] transition-all duration-200;
+  }
+
+  /* ─── Inputs ──────────────────────────────────────────────────────── */
   .input-field {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition;
+    @apply w-full px-4 py-3 border-2 border-gray-200 rounded-xl
+           focus:outline-none focus:border-[#C0162C]
+           transition-colors duration-200 bg-white text-[#1A1A2E]
+           placeholder:text-gray-400 text-sm;
   }
+  .input-label {
+    @apply block text-sm font-semibold text-[#1A1A2E] mb-1.5;
+  }
+
+  /* ─── Cards ───────────────────────────────────────────────────────── */
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+    @apply bg-white rounded-2xl border border-gray-100 p-6;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    animation: fadeInUp 0.35s ease-out;
+    position: relative;
+    overflow: visible;
   }
+  .card-hover {
+    @apply card transition-all duration-200 cursor-pointer;
+  }
+  .card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.10);
+  }
+  .card-glass {
+    position: relative;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.35);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    animation: fadeInUp 0.35s ease-out;
+    overflow: visible;
+  }
+
+  /* ─── Urgency request card variants ──────────────────────────────── */
+  .req-card {
+    @apply bg-white rounded-2xl p-5 border-2 flex flex-col gap-3
+           transition-all duration-200;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .req-card:hover { transform: translateY(-3px); }
+  .req-card-critical {
+    border-color: #C0162C;
+    background: #fff5f5;
+    animation: criticalPulse 2.5s ease-in-out infinite, fadeInUp 0.35s ease-out;
+  }
+  .req-card-critical:hover {
+    box-shadow: 0 10px 30px rgba(192,22,44,0.2);
+  }
+  .req-card-urgent {
+    border-color: #ea580c;
+    background: #fff7ed;
+    animation: fadeInUp 0.35s ease-out;
+  }
+  .req-card-urgent:hover { box-shadow: 0 10px 20px rgba(234,88,12,0.15); }
+  .req-card-normal {
+    border-color: #16a34a;
+    background: #f0fdf4;
+    animation: fadeInUp 0.35s ease-out;
+  }
+  .req-card-normal:hover { box-shadow: 0 10px 20px rgba(22,163,74,0.12); }
+
+  /* ─── Badges ──────────────────────────────────────────────────────── */
   .badge-critical {
-    @apply bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full;
+    @apply inline-flex items-center text-xs font-bold px-3 py-1 rounded-full
+           bg-red-100 text-[#C0162C] border border-red-200;
   }
   .badge-urgent {
-    @apply bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full;
+    @apply inline-flex items-center text-xs font-bold px-3 py-1 rounded-full
+           bg-orange-100 text-orange-700 border border-orange-200;
   }
   .badge-normal {
-    @apply bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full;
+    @apply inline-flex items-center text-xs font-bold px-3 py-1 rounded-full
+           bg-green-100 text-green-700 border border-green-200;
   }
   .badge-pending {
-    @apply bg-yellow-100 text-yellow-700 text-xs font-semibold px-2 py-0.5 rounded-full;
+    @apply inline-flex items-center text-xs font-bold px-3 py-1 rounded-full
+           bg-yellow-100 text-yellow-700 border border-yellow-200;
   }
   .badge-fulfilled {
-    @apply bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full;
+    @apply inline-flex items-center text-xs font-bold px-3 py-1 rounded-full
+           bg-green-100 text-green-700 border border-green-200;
   }
   .badge-cancelled {
-    @apply bg-gray-100 text-gray-600 text-xs font-semibold px-2 py-0.5 rounded-full;
+    @apply inline-flex items-center text-xs font-bold px-3 py-1 rounded-full
+           bg-gray-100 text-gray-500 border border-gray-200;
   }
+  .badge-gold {
+    @apply inline-flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full;
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #1A1A2E;
+    box-shadow: 0 2px 6px rgba(255,215,0,0.4);
+  }
+
+  /* ─── Skeleton loading ────────────────────────────────────────────── */
+  .skeleton {
+    border-radius: 0.75rem;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  .skeleton-text { @apply h-4 rounded-lg; }
+  .skeleton-title { @apply h-6 rounded-lg; }
+  .skeleton-circle { @apply rounded-full; }
+
+  /* ─── Toggle pill switch ──────────────────────────────────────────── */
+  .toggle-track {
+    @apply relative inline-flex items-center h-7 w-14 rounded-full cursor-pointer
+           transition-colors duration-300 focus:outline-none;
+  }
+  .toggle-knob {
+    @apply absolute h-5 w-5 rounded-full bg-white shadow-md
+           transition-transform duration-300;
+    top: 4px;
+  }
+
+  /* ─── Timeline ────────────────────────────────────────────────────── */
+  .timeline-item {
+    @apply relative pl-10 pb-8;
+  }
+  .timeline-item:not(:last-child)::before {
+    content: '';
+    @apply absolute left-[18px] top-7 bottom-0 w-0.5 bg-gray-200;
+  }
+  .timeline-dot {
+    @apply absolute left-0 top-0.5 w-9 h-9 rounded-full flex items-center justify-center
+           text-white font-bold text-sm shadow-sm;
+    background: linear-gradient(135deg, #C0162C, #8B0000);
+  }
+
+  /* ─── Section header ──────────────────────────────────────────────── */
+  .section-title {
+    @apply text-2xl font-bold text-[#1A1A2E];
+    font-family: 'Poppins', sans-serif;
+  }
+  .section-subtitle { @apply text-gray-500 mt-1; }
+
+  /* ─── Stat card ───────────────────────────────────────────────────── */
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+  .stat-card-value { @apply text-3xl font-bold; font-family: 'Poppins', sans-serif; }
+  .stat-card-label { @apply text-sm text-gray-500 font-medium; }
 }
+
+/* ─── Keyframes ─────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; } to { opacity: 1; }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes criticalPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192,22,44,0.45); }
+  50%       { box-shadow: 0 0 0 10px rgba(192,22,44,0); }
+}
+@keyframes bellRing {
+  0%, 100%     { transform: rotate(0deg); }
+  10%, 30%, 50% { transform: rotate(-16deg); }
+  20%, 40%     { transform: rotate(16deg); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes notifSlide {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ─── Animated hero gradient ────────────────────────────────────────── */
+.hero-gradient {
+  background: linear-gradient(135deg, #C0162C 0%, #8B0000 35%, #1A1A2E 70%, #2d1b4e 100%);
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* ─── Notification item enter ───────────────────────────────────────── */
+.notif-enter { animation: notifSlide 0.4s ease-out; }
+
+/* ─── Utility: animated gradient text ──────────────────────────────── */
+.text-gradient {
+  background: linear-gradient(135deg, #C0162C, #FF6B6B 60%, #FFD700);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f0f0f0; }
+::-webkit-scrollbar-thumb { background: #C0162C55; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #C0162C; }
