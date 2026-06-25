@@ -6,8 +6,92 @@ import User from '../models/User.js';
 import { emitToUser } from '../socket/socketHandler.js';
 import { sendDonorResponseEmail } from '../utils/emailService.js';
 import { canDonate, getDonatableTo } from '../utils/bloodCompatibility.js';
+import { getUserRatingSummary } from './ratingController.js';
+import { sendPushToUser } from './pushController.js';
 
 const DONATION_COOLDOWN_DAYS = 90;
+
+// Best-effort city extraction from a free-text address ("123 MG Road, Hyderabad" -> "Hyderabad")
+const extractCity = (address) => {
+  if (!address) return '';
+  const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : address.trim();
+};
+
+// Donor profile completeness — used to nudge profile setup and gate request responses
+const computeDonorCompleteness = (donor, user) => {
+  const checks = [
+    !!user?.name,
+    !!donor?.bloodGroup,
+    !!donor?.address,
+    !!user?.phone,
+    donor?.weight != null,
+    donor?.age != null,
+    donor?.isAvailable !== undefined && donor?.isAvailable !== null,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+};
+
+// Health-based eligibility — separate from the 90-day cooldown so the UI can explain *why*
+const getHealthEligibility = (donor) => {
+  if (donor?.weight != null && donor.weight < 50) {
+    return { healthEligible: false, healthReason: 'Donors must weigh over 50kg to donate.' };
+  }
+  if (donor?.age != null && (donor.age < 18 || donor.age > 65)) {
+    return { healthEligible: false, healthReason: 'Donors must be between 18 and 65 years old to donate.' };
+  }
+  return { healthEligible: true, healthReason: null };
+};
+
+// "Monika Sharma" -> "Monika S." — never expose a donor's full name publicly
+const maskName = (fullName) => {
+  if (!fullName) return 'Anonymous Donor';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+};
+
+/**
+ * @desc    Public donor leaderboard — top donors by total donations
+ * @route   GET /api/leaderboard
+ * @access  Public (optionally personalized if authenticated as a donor)
+ */
+export const getLeaderboard = async (req, res) => {
+  try {
+    const { city, bloodGroup } = req.query;
+
+    const query = { totalDonations: { $gt: 0 } };
+    if (bloodGroup) query.bloodGroup = bloodGroup;
+    if (city?.trim()) query.address = { $regex: city.trim(), $options: 'i' };
+
+    const donors = await Donor.find(query)
+      .populate('user', 'name')
+      .sort({ totalDonations: -1 })
+      .limit(200) // enough to compute an honest rank without scanning the whole collection
+      .lean();
+
+    const toEntry = (d, rank) => ({
+      rank,
+      name: maskName(d.user?.name),
+      bloodGroup: d.bloodGroup,
+      city: extractCity(d.address),
+      totalDonations: d.totalDonations,
+    });
+
+    const top10 = donors.slice(0, 10).map((d, i) => toEntry(d, i + 1));
+
+    let myEntry = null;
+    if (req.user?.role === 'donor') {
+      const myIndex = donors.findIndex((d) => d.user?._id?.toString() === req.user._id.toString());
+      if (myIndex >= 0) myEntry = toEntry(donors[myIndex], myIndex + 1);
+    }
+
+    res.status(200).json({ status: 'success', data: { leaderboard: top10, myEntry } });
+  } catch (error) {
+    console.error('Get Leaderboard Error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 export const getDonorProfile = async (req, res) => {
   try {
@@ -27,10 +111,18 @@ export const getDonorProfile = async (req, res) => {
       ? null
       : new Date(new Date(lastDonated).getTime() + DONATION_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
     const daysUntilEligible = isEligible ? 0 : Math.ceil(DONATION_COOLDOWN_DAYS - daysSince);
+    const { healthEligible, healthReason } = getHealthEligibility(donor);
+    const profileCompleteness = computeDonorCompleteness(donor, donor.user);
+    const rating = await getUserRatingSummary(donor.user._id);
 
     res.status(200).json({
       status: 'success',
-      data: { donor, eligibility: { isEligible, nextEligibleDate, daysUntilEligible } }
+      data: {
+        donor,
+        eligibility: { isEligible, nextEligibleDate, daysUntilEligible, healthEligible, healthReason },
+        profileCompleteness,
+        rating,
+      }
     });
   } catch (error) {
     console.error('Get Donor Profile Error:', error);
@@ -40,12 +132,16 @@ export const getDonorProfile = async (req, res) => {
 
 export const updateDonorProfile = async (req, res) => {
   try {
-    const { bloodGroup, address, coordinates, isAvailable } = req.body;
+    const { bloodGroup, address, coordinates, isAvailable, weight, age, hemoglobin, chronicConditions } = req.body;
 
     const updateFields = {};
     if (bloodGroup) updateFields.bloodGroup = bloodGroup;
     if (address) updateFields.address = address;
     if (isAvailable !== undefined) updateFields.isAvailable = isAvailable;
+    if (weight !== undefined) updateFields.weight = weight === '' ? null : weight;
+    if (age !== undefined) updateFields.age = age === '' ? null : age;
+    if (hemoglobin !== undefined) updateFields.hemoglobin = hemoglobin === '' ? null : hemoglobin;
+    if (chronicConditions !== undefined) updateFields.chronicConditions = chronicConditions;
     if (coordinates && Array.isArray(coordinates) && coordinates.length === 2) {
       updateFields.location = {
         type: 'Point',
@@ -59,10 +155,12 @@ export const updateDonorProfile = async (req, res) => {
       { new: true, upsert: true, runValidators: true }
     ).populate('user', 'name email phone');
 
+    const profileCompleteness = computeDonorCompleteness(donor, donor.user);
+
     res.status(200).json({
       status: 'success',
       message: 'Donor profile updated successfully',
-      data: { donor }
+      data: { donor, profileCompleteness }
     });
   } catch (error) {
     console.error('Update Donor Profile Error:', error);
@@ -105,26 +203,35 @@ export const getBloodRequests = async (req, res) => {
       };
     };
 
-    if (lat && lng) {
-      const radiusInMeters = (parseFloat(radius) || 10) * 1000;
-      const geoMatchQuery = { status: 'Pending' };
-      if (bgFilter) geoMatchQuery.bloodGroup = bgFilter;
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
 
-      const requests = await BloodRequest.aggregate([
-        {
-          $geoNear: {
-            near: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
-            distanceField: 'distance',
-            maxDistance: radiusInMeters,
-            spherical: true,
-            query: geoMatchQuery,
+    if (lat && lng && !isNaN(parsedLat) && !isNaN(parsedLng)) {
+      try {
+        const radiusInMeters = (parseFloat(radius) || 10) * 1000;
+        const geoMatchQuery = { status: 'Pending' };
+        if (bgFilter) geoMatchQuery.bloodGroup = bgFilter;
+
+        const requests = await BloodRequest.aggregate([
+          {
+            $geoNear: {
+              near: { type: 'Point', coordinates: [parsedLng, parsedLat] },
+              distanceField: 'distance',
+              maxDistance: radiusInMeters,
+              spherical: true,
+              query: geoMatchQuery,
+            },
           },
-        },
-        { $match: { $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }] } },
-      ]);
+          { $match: { $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }] } },
+        ]);
 
-      const requestsWithStatus = requests.map((r) => ({ ...r, ...attachMeta(r.responses, r.bloodGroup) }));
-      return res.status(200).json({ status: 'success', data: { requests: requestsWithStatus } });
+        const requestsWithStatus = requests.map((r) => ({ ...r, ...attachMeta(r.responses, r.bloodGroup) }));
+        return res.status(200).json({ status: 'success', data: { requests: requestsWithStatus } });
+      } catch (geoError) {
+        // No 2dsphere index, bad coordinates, etc. — fall back to a regular query below
+        // rather than failing the whole request.
+        console.error('GeoNear Query Error, falling back to regular find:', geoError.message);
+      }
     }
 
     const query = { status: 'Pending', ...expiryFilter };
@@ -202,6 +309,18 @@ export const respondToRequest = async (req, res) => {
     // Fetch donor profile to get blood group + check 90-day eligibility
     const donorProfile = await Donor.findOne({ user: donorUserId });
 
+    if (computeDonorCompleteness(donorProfile, req.user) < 80) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Please complete your donor profile (weight, age, address) before responding to requests.'
+      });
+    }
+
+    const { healthEligible, healthReason } = getHealthEligibility(donorProfile);
+    if (!healthEligible) {
+      return res.status(400).json({ status: 'fail', message: healthReason });
+    }
+
     if (donorProfile?.lastDonationDate) {
       const daysSince =
         (Date.now() - new Date(donorProfile.lastDonationDate).getTime()) / (1000 * 60 * 60 * 24);
@@ -225,19 +344,31 @@ export const respondToRequest = async (req, res) => {
     });
     await request.save();
 
-    // Notify the hospital with full donor details including phone
-    const notification = await Notification.create({
-      recipient: request.hospital,
-      message: `${req.user.name} (${donorProfile?.bloodGroup || 'Unknown'} blood group) responded to your ${request.bloodGroup} request. Phone: ${req.user.phone || 'N/A'}.`,
-      type: 'donor_response',
-      relatedRequest: request._id
-    });
+    // The donor's response is already saved — a notification failure here
+    // must not turn this into an error response.
+    try {
+      const notification = await Notification.create({
+        recipient: request.hospital, // request.hospital is already the hospital's User _id
+        message: `${req.user.name} (${donorProfile?.bloodGroup || 'Unknown'} blood group) responded to your ${request.bloodGroup} request. Phone: ${req.user.phone || 'N/A'}.`,
+        type: 'donor_response',
+        relatedRequest: request._id
+      });
 
-    emitToUser(request.hospital.toString(), 'notification', {
-      message: notification.message,
-      type: 'donor_response',
-      requestId: request._id
-    });
+      emitToUser(request.hospital.toString(), 'notification', {
+        message: notification.message,
+        type: 'donor_response',
+        requestId: request._id
+      });
+
+      sendPushToUser(request.hospital, {
+        title: 'Donor Responded 🤝',
+        body: `${req.user.name} responded to your ${request.bloodGroup} blood request.`,
+        url: '/hospital/dashboard',
+        tag: `response-${request._id}`,
+      });
+    } catch (notifyError) {
+      console.error('Respond To Request Notification Error:', notifyError.message);
+    }
 
     const hospitalUser = await User.findById(request.hospital).select('email name').lean();
     if (hospitalUser?.email) {
