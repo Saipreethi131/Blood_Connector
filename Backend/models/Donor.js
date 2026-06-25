@@ -18,15 +18,17 @@ const donorSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Address is required']
   },
+  // No defaults here on purpose: a 2dsphere index needs the field to be
+  // fully ABSENT (not present-with-null) to safely skip undonated-location
+  // donors in geo queries. A present-but-invalid GeoJSON object (e.g.
+  // { type: null, coordinates: null }) can throw on insert.
   location: {
     type: {
       type: String,
-      enum: ['Point'],
-      default: 'Point'
+      enum: ['Point']
     },
     coordinates: {
-      type: [Number], // [longitude, latitude]
-      required: [true, 'Coordinates are required']
+      type: [Number] // [longitude, latitude]
     }
   },
   isAvailable: {
@@ -44,6 +46,22 @@ const donorSchema = new mongoose.Schema({
   eligibilityStatus: {
     type: Boolean,
     default: true
+  },
+  weight: {
+    type: Number,
+    default: null
+  },
+  age: {
+    type: Number,
+    default: null
+  },
+  hemoglobin: {
+    type: Number,
+    default: null
+  },
+  chronicConditions: {
+    type: Boolean,
+    default: false
   }
 });
 

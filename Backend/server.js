@@ -13,16 +13,33 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import campRoutes from './routes/campRoutes.js';
 import pushRoutes from './routes/pushRoutes.js';
+import leaderboardRoutes from './routes/leaderboardRoutes.js';
+import ratingRoutes from './routes/ratingRoutes.js';
 import { initSocket } from './socket/socketHandler.js';
+import { startExpiryCron } from './cron/expiryCron.js';
 
 dotenv.config();
 connectDB();
+startExpiryCron();
 
 const app = express();
 const server = http.createServer(app);
 
+const isDev = process.env.NODE_ENV !== 'production';
+
+// Deployed CLIENT_URL plus common local dev ports — a single fixed origin
+// would otherwise make the browser reject every request from `npm run dev`.
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://localhost:5174',
+].filter(Boolean);
+
 const corsOptions = {
-  origin: process.env.CLIENT_URL || '*',
+  origin: (origin, callback) => {
+    if (!origin || isDev || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -32,7 +49,15 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Respond with 503 if any route hangs beyond 15 seconds
+app.use((req, res, next) => {
+  res.setTimeout(15000, () => {
+    if (!res.headersSent) {
+      res.status(503).json({ status: 'error', message: 'Request timed out — please try again' });
+    }
+  });
+  next();
+});
 
 // Global rate limit: 200 req/15min (dev: 500)
 app.use(rateLimit({
@@ -65,6 +90,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/camps',         campRoutes);
 app.use('/api/push',          pushRoutes);
+app.use('/api/leaderboard',   leaderboardRoutes);
+app.use('/api/ratings',       ratingRoutes);
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({
@@ -76,7 +103,10 @@ app.get('/api/health', (req, res) => {
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || '*',
+    origin: (origin, callback) => {
+      if (!origin || isDev || allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST']
   }
 });
