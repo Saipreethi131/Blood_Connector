@@ -1,21 +1,17 @@
 import 'dotenv/config'; // this module reads EMAIL_USER/PASS at import time, before
 // server.js's own dotenv.config() call runs (it fires after all of its
 // imports — including this module, transitively — have already evaluated)
-import dns from 'dns';
 import nodemailer from 'nodemailer';
-
-// Render blocks outbound IPv6 — force all DNS resolutions (including smtp.gmail.com)
-// to return IPv4 addresses. family:4 alone doesn't work for TLS (port 465) connections.
-dns.setDefaultResultOrder('ipv4first');
 
 const CLIENT = process.env.CLIENT_URL || 'http://localhost:5173';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  family: 4,
+  port: 587,
+  secure: false,
+  family: 4, // force IPv4 — port 587 uses net.createConnection which respects this; port 465 tls.connect does not
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+  tls: { rejectUnauthorized: false },
   connectionTimeout: 10000,
   greetingTimeout: 5000,
   socketTimeout: 10000,
