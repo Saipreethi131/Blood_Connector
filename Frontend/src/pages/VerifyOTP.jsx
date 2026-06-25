@@ -27,7 +27,7 @@ export default function VerifyOTP() {
     setResending(true);
     try {
       await api.post('/auth/resend-otp', { email });
-      toast.success('New OTP sent! Check server console in dev mode.');
+      toast.success('OTP sent to your email address. Check your inbox and spam folder.');
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to resend OTP'); }
     finally { setResending(false); }
   };

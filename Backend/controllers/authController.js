@@ -69,7 +69,14 @@ export const registerDonor = async (req, res) => {
 
     // Generate OTP and send via email
     const otp = await sendOTP(email);
-    sendOTPEmail(user.email, otp); // fire-and-forget; failure is logged, not thrown
+    try {
+      await sendOTPEmail(user.email, otp);
+      console.log('[Email] OTP sent successfully to:', user.email);
+    } catch (err) {
+      console.error('[Email] Failed to send OTP:', err.message);
+      // still return success to the user — the OTP is saved in the DB and
+      // they can use Resend Code if the email never arrives
+    }
 
     const accessToken  = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
@@ -258,7 +265,13 @@ export const resendOTP = async (req, res) => {
     }
 
     const otp = await sendOTP(email);
-    sendOTPEmail(user.email, otp); // fire-and-forget
+    try {
+      await sendOTPEmail(user.email, otp);
+      console.log('[Email] OTP sent successfully to:', user.email);
+    } catch (err) {
+      console.error('[Email] Failed to send OTP:', err.message);
+      // still return success — the OTP is saved in the DB regardless
+    }
 
     res.status(200).json({
       status: 'success',
