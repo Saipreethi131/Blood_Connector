@@ -1,17 +1,32 @@
 import 'dotenv/config'; // this module reads EMAIL_USER/PASS at import time, before
 // server.js's own dotenv.config() call runs (it fires after all of its
 // imports — including this module, transitively — have already evaluated)
+import dns from 'dns/promises';
 import nodemailer from 'nodemailer';
 
 const CLIENT = process.env.CLIENT_URL || 'http://localhost:5173';
 
+// Render blocks all outbound IPv6. nodemailer's family:4 option is not reliably
+// passed through to the underlying socket on all Node versions, so we pre-resolve
+// smtp.gmail.com to an IPv4 address ourselves using dns.resolve4 (A-record only).
+let smtpHost = 'smtp.gmail.com';
+try {
+  const [ipv4] = await dns.resolve4('smtp.gmail.com');
+  smtpHost = ipv4;
+  console.log('[Email] Resolved smtp.gmail.com to IPv4:', smtpHost);
+} catch (e) {
+  console.warn('[Email] IPv4 pre-resolve failed, falling back to hostname:', e.message);
+}
+
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: smtpHost,
   port: 587,
   secure: false,
-  family: 4, // force IPv4 — port 587 uses net.createConnection which respects this; port 465 tls.connect does not
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  tls: { rejectUnauthorized: false },
+  tls: {
+    servername: 'smtp.gmail.com', // required for SNI when host is an IP address
+    rejectUnauthorized: false,
+  },
   connectionTimeout: 10000,
   greetingTimeout: 5000,
   socketTimeout: 10000,
