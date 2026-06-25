@@ -159,6 +159,128 @@ export const sendResponseRejectedEmail = async ({ to, donorName, hospitalName, b
   }
 };
 
+// ── Hospital registration approved by admin ───────────────────────────────────
+export const sendHospitalApprovedEmail = async ({ to, hospitalName }) => {
+  if (!canSend()) return;
+  try {
+    await createTransporter().sendMail({
+      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `✅ Your hospital registration has been approved!`,
+      html: wrap(`
+        ${header('Registration Approved')}
+        <div style="padding:28px 24px;background:#fff;">
+          <h2 style="color:#1A1A2E;margin:0 0 12px;font-size:20px;">Welcome aboard, ${hospitalName}! 🎉</h2>
+          <p style="color:#555;line-height:1.6;margin:0 0 20px;">
+            Your hospital registration has been reviewed and <strong style="color:#16a34a;">approved</strong> by our administrator.
+            You can now log in and start posting blood requests, searching for donors, and managing your inventory.
+          </p>
+          <a href="${CLIENT}/login" style="display:inline-block;background:#C0162C;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
+            Log In Now →
+          </a>
+        </div>
+        ${footer()}
+      `),
+    });
+  } catch (err) {
+    console.error('[Email] Hospital approved email failed:', err.message);
+  }
+};
+
+// ── Hospital registration rejected by admin ───────────────────────────────────
+export const sendHospitalRejectedEmail = async ({ to, hospitalName, reason }) => {
+  if (!canSend()) return;
+  try {
+    await createTransporter().sendMail({
+      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `Update on your hospital registration`,
+      html: wrap(`
+        ${header('Registration Update')}
+        <div style="padding:28px 24px;background:#fff;">
+          <h2 style="color:#1A1A2E;margin:0 0 12px;font-size:20px;">Hi ${hospitalName},</h2>
+          <p style="color:#555;line-height:1.6;margin:0 0 16px;">
+            After review, we were unable to approve your hospital registration at this time.
+          </p>
+          ${reason ? `<div style="background:#FFF0F0;border-left:4px solid #C0162C;border-radius:0 8px 8px 0;padding:14px 18px;margin:0 0 20px;"><p style="margin:0;color:#1A1A2E;"><strong>Reason:</strong> ${reason}</p></div>` : ''}
+          <p style="color:#555;line-height:1.6;margin:0 0 20px;">
+            If you believe this is a mistake or would like to provide additional information, please contact support.
+          </p>
+        </div>
+        ${footer()}
+      `),
+    });
+  } catch (err) {
+    console.error('[Email] Hospital rejected email failed:', err.message);
+  }
+};
+
+// ── New blood camp announced in a donor's city ─────────────────────────────────
+export const sendCampAnnouncementEmail = async ({ to, donorName, title, hospitalName, date, address }) => {
+  if (!canSend()) return;
+  try {
+    const campDate = new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    await createTransporter().sendMail({
+      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `⛺ New Blood Camp Near You: ${title}`,
+      html: wrap(`
+        ${header('A blood donation camp is happening near you')}
+        <div style="padding:28px 24px;background:#fff;">
+          <h2 style="color:#1A1A2E;margin:0 0 12px;font-size:20px;">Hi ${donorName},</h2>
+          <p style="color:#555;line-height:1.6;margin:0 0 16px;">
+            <strong>${hospitalName}</strong> just announced a new blood donation camp in your area:
+          </p>
+          <div style="background:#FFF0F0;border-left:4px solid #C0162C;border-radius:0 8px 8px 0;padding:16px 20px;margin:0 0 20px;">
+            <p style="margin:0 0 8px;color:#1A1A2E;font-size:16px;"><strong>${title}</strong></p>
+            <p style="margin:0 0 6px;color:#1A1A2E;"><strong>When:</strong> ${campDate}</p>
+            <p style="margin:0;color:#1A1A2E;"><strong>Where:</strong> ${address}</p>
+          </div>
+          <p style="color:#555;margin:0 0 20px;">Log in to register and reserve your spot — your contribution can save lives.</p>
+          <a href="${CLIENT}/donor/dashboard" style="display:inline-block;background:#C0162C;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
+            Register for Camp →
+          </a>
+        </div>
+        ${footer()}
+      `),
+    });
+  } catch (err) {
+    console.error('[Email] Camp announcement email failed:', err.message);
+  }
+};
+
+// ── Reminder: a hospital's request expires in ~24 hours ───────────────────────
+export const sendRequestExpiryReminderEmail = async ({ to, hospitalName, bloodGroup, unitsRequired, responseCount }) => {
+  if (!canSend()) return;
+  try {
+    await createTransporter().sendMail({
+      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `⏱ Your ${bloodGroup} blood request expires in 24 hours`,
+      html: wrap(`
+        ${header('Your request is about to expire')}
+        <div style="padding:28px 24px;background:#fff;">
+          <h2 style="color:#1A1A2E;margin:0 0 12px;font-size:20px;">Hi ${hospitalName},</h2>
+          <p style="color:#555;line-height:1.6;margin:0 0 16px;">
+            Your blood request for <strong style="color:#C0162C;">${bloodGroup}</strong>
+            (${unitsRequired} unit(s)) will expire in about 24 hours and is still <strong>Pending</strong>.
+          </p>
+          <p style="color:#555;line-height:1.6;margin:0 0 20px;">
+            So far <strong>${responseCount}</strong> donor(s) have responded. If you still need blood,
+            log in to review responses or extend your search before it auto-closes.
+          </p>
+          <a href="${CLIENT}/hospital/dashboard" style="display:inline-block;background:#C0162C;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
+            View My Requests →
+          </a>
+        </div>
+        ${footer()}
+      `),
+    });
+  } catch (err) {
+    console.error('[Email] Expiry reminder email failed:', err.message);
+  }
+};
+
 // ── Critical / Urgent blood request alert to matching donors ──────────────────
 export const sendCriticalRequestEmail = async ({ to, donorName, hospitalName, bloodGroup, city, urgency }) => {
   if (!canSend()) return;
