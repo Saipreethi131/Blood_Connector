@@ -1,7 +1,12 @@
 import 'dotenv/config'; // this module reads EMAIL_USER/PASS at import time, before
 // server.js's own dotenv.config() call runs (it fires after all of its
 // imports — including this module, transitively — have already evaluated)
+import dns from 'dns';
 import nodemailer from 'nodemailer';
+
+// Render blocks outbound IPv6 — force all DNS resolutions (including smtp.gmail.com)
+// to return IPv4 addresses. family:4 alone doesn't work for TLS (port 465) connections.
+dns.setDefaultResultOrder('ipv4first');
 
 const CLIENT = process.env.CLIENT_URL || 'http://localhost:5173';
 
