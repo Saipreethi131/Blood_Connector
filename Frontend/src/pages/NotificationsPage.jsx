@@ -7,7 +7,7 @@ const typeCfg = {
   new_request:    { icon: '🩸', color: 'border-l-[#C0162C] bg-red-50',   dot: 'bg-[#C0162C]' },
   donor_response: { icon: '🤝', color: 'border-l-blue-500 bg-blue-50',   dot: 'bg-blue-500' },
   request_update: { icon: '📋', color: 'border-l-purple-500 bg-purple-50', dot: 'bg-purple-500' },
-  general:        { icon: '🔔', color: 'border-l-gray-400 bg-gray-50',   dot: 'bg-gray-400' },
+  general:        { icon: '🔔', color: 'border-l-slate-400 bg-slate-50',   dot: 'bg-slate-400' },
 };
 
 function SkeletonNotif() {
@@ -46,6 +46,7 @@ export default function NotificationsPage() {
       await api.put(`/notifications/${id}/read`);
       setNotifications((prev) => prev.map((n) => n._id === id ? { ...n, isRead: true } : n));
       setUnreadCount((c) => Math.max(0, c - 1));
+      refreshUnreadCount(); // keep the navbar bell badge in sync too
     } catch { toast.error('Failed to mark as read'); }
   };
 
@@ -87,13 +88,13 @@ export default function NotificationsPage() {
       ) : notifications.length === 0 ? (
         <div className="card text-center py-20">
           <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center text-4xl mb-4"
-            style={{ background: 'linear-gradient(135deg, #FFF0F0, #ffe4e6)' }}>
+            style={{ background: 'linear-gradient(135deg, #FFF5F5, #ffe4e6)' }}>
             🔔
           </div>
           <h3 className="font-bold text-[#1A1A2E] text-lg mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
             All Caught Up!
           </h3>
-          <p className="text-gray-400 text-sm">No notifications yet. We'll let you know when something happens.</p>
+          <p className="text-slate-400 text-sm">No notifications yet. We'll let you know when something happens.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -102,21 +103,21 @@ export default function NotificationsPage() {
             return (
               <div key={n._id}
                 className={`card cursor-pointer border-l-4 transition-all duration-200 hover:shadow-md notif-enter
-                  ${n.isRead ? 'border-l-gray-200 bg-white' : cfg.color}
+                  ${n.isRead ? 'border-l-slate-200 bg-white' : cfg.color}
                   ${!n.isRead ? 'hover:-translate-y-0.5' : ''}`}
                 style={{ animationDelay: `${i * 0.05}s` }}
                 onClick={() => !n.isRead && markRead(n._id)}>
                 <div className="flex items-start gap-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${
-                    n.isRead ? 'bg-gray-100' : 'bg-white shadow-sm'
+                    n.isRead ? 'bg-slate-100' : 'bg-white shadow-sm'
                   }`}>
                     {cfg.icon}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm leading-relaxed ${n.isRead ? 'text-gray-500' : 'text-[#1A1A2E] font-medium'}`}>
+                    <p className={`text-sm leading-relaxed ${n.isRead ? 'text-slate-500' : 'text-[#1A1A2E] font-medium'}`}>
                       {n.message}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1.5 font-medium">
+                    <p className="text-xs text-slate-400 mt-1.5 font-medium">
                       {new Date(n.createdAt).toLocaleString()}
                     </p>
                   </div>

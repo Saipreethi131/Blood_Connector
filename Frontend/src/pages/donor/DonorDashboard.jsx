@@ -5,6 +5,9 @@ import api from '../../api/axios.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
 import { computeBadges, nextBadge } from '../../utils/badges.js';
+import { openPrintTable } from '../../utils/exportHelpers.js';
+import RateModal from '../../components/RateModal.jsx';
+import { RatingStars } from '../../components/RatingStars.jsx';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -40,6 +43,25 @@ const urgencyCfg = {
 const formatDistance = (m) => {
   if (m == null) return null;
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+};
+
+// Consecutive months (counting back from the most recent donation) with at least one donation
+const computeDonationStreak = (donations) => {
+  if (!donations || donations.length === 0) return 0;
+  const monthKeys = new Set(
+    donations.map((d) => {
+      const date = new Date(d.donationDate);
+      return `${date.getFullYear()}-${date.getMonth()}`;
+    })
+  );
+  const sortedDates = donations.map((d) => new Date(d.donationDate)).sort((a, b) => b - a);
+  let cursor = new Date(sortedDates[0].getFullYear(), sortedDates[0].getMonth(), 1);
+  let streak = 0;
+  while (monthKeys.has(`${cursor.getFullYear()}-${cursor.getMonth()}`)) {
+    streak += 1;
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+  return streak;
 };
 
 const getExpiryLabel = (expiresAt) => {
@@ -88,9 +110,13 @@ export default function DonorDashboard() {
 
   const [donor, setDonor] = useState(null);
   const [eligibility, setEligibility] = useState(null);
+  const [profileCompleteness, setProfileCompleteness] = useState(null);
+  const [donorRating, setDonorRating] = useState(null);
   const [requests, setRequests] = useState([]);
   const [donations, setDonations] = useState([]);
   const [filters, setFilters] = useState({ bloodGroup: '', city: '' });
+  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingDonations, setLoadingDonations] = useState(true);
@@ -100,10 +126,14 @@ export default function DonorDashboard() {
   const [locating, setLocating] = useState(false);
   const [radius, setRadius] = useState('10');
   const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({});
+  const [editForm, setEditForm] = useState({
+    bloodGroup: 'A+', address: '', weight: '', age: '', hemoglobin: '', chronicConditions: false,
+  });
   const [savingProfile, setSavingProfile] = useState(false);
   const [lowerTab, setLowerTab] = useState('requests');
   const [copiedId, setCopiedId] = useState(null);
+  const [ratingRequest, setRatingRequest] = useState(null);
+  const [ratedRequestIds, setRatedRequestIds] = useState(new Set());
 
   // Blood camps
   const [publicCamps, setPublicCamps] = useState([]);
@@ -117,8 +147,17 @@ export default function DonorDashboard() {
       const profile = data.data.donor ?? null;
       setDonor(profile);
       setEligibility(data.data.eligibility ?? null);
+      setProfileCompleteness(data.data.profileCompleteness ?? null);
+      setDonorRating(data.data.rating ?? null);
       if (profile) {
-        setEditForm({ bloodGroup: profile.bloodGroup || '', address: profile.address || '' });
+        setEditForm({
+          bloodGroup: profile.bloodGroup || '',
+          address: profile.address || '',
+          weight: profile.weight ?? '',
+          age: profile.age ?? '',
+          hemoglobin: profile.hemoglobin ?? '',
+          chronicConditions: !!profile.chronicConditions,
+        });
       }
     } catch (err) {
       if (!err.response) {
@@ -240,8 +279,11 @@ export default function DonorDashboard() {
     setSavingProfile(true);
     try {
       const { data } = await api.post('/donor/profile', editForm);
-      setDonor(data.data.donor); updateProfile(data.data.donor); setEditMode(false);
-      toast.success('Profile updated!');
+      setDonor(data.data.donor);
+      setProfileCompleteness(data.data.profileCompleteness ?? null);
+      updateProfile(data.data.donor);
+      setEditMode(false);
+      toast.success('Profile updated successfully');
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to update profile'); }
     finally { setSavingProfile(false); }
   };
@@ -315,11 +357,47 @@ export default function DonorDashboard() {
     win.focus();
   };
 
+  const handleExportHistoryPDF = () => {
+    if (donations.length === 0) { toast.error('No donations to export'); return; }
+    openPrintTable('Donation History', [
+      { key: 'hospitalName', label: 'Hospital' },
+      { key: 'bloodGroup', label: 'Blood Group' },
+      { key: 'units', label: 'Units' },
+      { key: 'status', label: 'Status' },
+      { key: 'date', label: 'Date' },
+    ], donations.map((d) => ({
+      hospitalName: d.hospitalName,
+      bloodGroup: d.bloodGroup,
+      units: d.units || 1,
+      status: d.status,
+      date: new Date(d.donationDate).toLocaleDateString(),
+    })));
+  };
+
   const badges = donor ? computeBadges(donor.totalDonations) : [];
   const next = donor ? nextBadge(donor.totalDonations) : null;
 
+  const URGENCY_RANK = { Critical: 0, Urgent: 1, Normal: 2 };
+  const displayedRequests = requests
+    .filter((r) => urgencyFilter === 'all' || r.urgency === urgencyFilter)
+    .slice()
+    .sort((a, b) => {
+      if (sortBy === 'urgent') return (URGENCY_RANK[a.urgency] ?? 3) - (URGENCY_RANK[b.urgency] ?? 3);
+      if (sortBy === 'nearest' && a.distance != null && b.distance != null) return a.distance - b.distance;
+      return new Date(b.createdAt) - new Date(a.createdAt); // newest
+    });
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+
+      {ratingRequest && (
+        <RateModal
+          requestId={ratingRequest._id}
+          targetLabel={ratingRequest.hospitalName}
+          onClose={() => setRatingRequest(null)}
+          onSubmitted={() => setRatedRequestIds((prev) => new Set([...prev, ratingRequest._id]))}
+        />
+      )}
 
       {/* ─── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -327,10 +405,10 @@ export default function DonorDashboard() {
           <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
             Donor Dashboard
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">Welcome back, <span className="font-semibold text-[#C0162C]">{user?.name}</span></p>
+          <p className="text-slate-500 text-sm mt-0.5">Welcome back, <span className="font-semibold text-[#C0162C]">{user?.name}</span></p>
         </div>
         <Link to="/notifications"
-          className="relative inline-flex items-center gap-2 bg-white border-2 border-gray-200 text-[#1A1A2E] px-4 py-2.5 rounded-xl font-semibold text-sm hover:border-[#C0162C] hover:text-[#C0162C] transition-all duration-200">
+          className="relative inline-flex items-center gap-2 bg-white border-2 border-slate-200 text-[#1A1A2E] px-4 py-2.5 rounded-xl font-semibold text-sm hover:border-[#C0162C] hover:text-[#C0162C] transition-all duration-200">
           🔔 Notifications
           {unreadCount > 0 && (
             <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
@@ -342,24 +420,11 @@ export default function DonorDashboard() {
       </div>
 
       {/* ─── Profile Card ─────────────────────────────────────────────────── */}
-      {loadingProfile ? <ProfileSkeleton /> : !donor ? (
-        <div className="card text-center py-10 space-y-4">
-          <div className="text-5xl">🩸</div>
-          <h2 className="text-lg font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
-            Complete Your Profile
-          </h2>
-          <p className="text-gray-500 text-sm max-w-xs mx-auto">
-            Set your blood group and address so hospitals can find you when they need help.
-          </p>
-          <button
-            onClick={() => setEditMode(true)}
-            className="btn-primary text-sm px-6 py-2.5">
-            Set Up Profile →
-          </button>
-        </div>
-      ) : editMode ? (
+      {loadingProfile ? <ProfileSkeleton /> : editMode ? (
         <div className="card">
-          <h2 className="text-lg font-bold text-[#1A1A2E] mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>Edit Profile</h2>
+          <h2 className="text-lg font-bold text-[#1A1A2E] mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            {donor ? 'Edit Profile' : 'Set Up Your Profile'}
+          </h2>
           <form onSubmit={handleSaveProfile} className="space-y-4 max-w-md">
             <div>
               <label className="input-label">Blood Group</label>
@@ -371,9 +436,38 @@ export default function DonorDashboard() {
             </div>
             <div>
               <label className="input-label">Address</label>
-              <input type="text" value={editForm.address}
+              <input type="text" required value={editForm.address}
                 onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} className="input-field" />
             </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="input-label">Weight (kg)</label>
+                <input type="number" min={1} max={500} value={editForm.weight}
+                  onChange={(e) => setEditForm({ ...editForm, weight: e.target.value })}
+                  placeholder="e.g. 65" className="input-field" />
+              </div>
+              <div>
+                <label className="input-label">Age</label>
+                <input type="number" min={1} max={120} value={editForm.age}
+                  onChange={(e) => setEditForm({ ...editForm, age: e.target.value })}
+                  placeholder="e.g. 28" className="input-field" />
+              </div>
+              <div>
+                <label className="input-label">Hemoglobin (g/dL)</label>
+                <input type="number" min={0} max={30} step="0.1" value={editForm.hemoglobin}
+                  onChange={(e) => setEditForm({ ...editForm, hemoglobin: e.target.value })}
+                  placeholder="e.g. 13.5" className="input-field" />
+              </div>
+            </div>
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" checked={editForm.chronicConditions}
+                onChange={(e) => setEditForm({ ...editForm, chronicConditions: e.target.checked })}
+                className="w-4 h-4 accent-[#C0162C]" />
+              <span className="text-sm text-[#1A1A2E]">I have a chronic medical condition</span>
+            </label>
+            <p className="text-xs text-slate-400">
+              Donors must be 18–65 years old and weigh over 50kg to be eligible to donate.
+            </p>
             <div className="flex gap-3">
               <button type="submit" disabled={savingProfile} className="btn-primary">
                 {savingProfile ? 'Saving…' : 'Save Changes'}
@@ -381,6 +475,21 @@ export default function DonorDashboard() {
               <button type="button" onClick={() => setEditMode(false)} className="btn-secondary">Cancel</button>
             </div>
           </form>
+        </div>
+      ) : !donor ? (
+        <div className="card text-center py-10 space-y-4">
+          <div className="text-5xl">🩸</div>
+          <h2 className="text-lg font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            Complete Your Profile
+          </h2>
+          <p className="text-slate-500 text-sm max-w-xs mx-auto">
+            Set your blood group and address so hospitals can find you when they need help.
+          </p>
+          <button
+            onClick={() => setEditMode(true)}
+            className="btn-primary text-sm px-6 py-2.5">
+            Set Up Profile →
+          </button>
         </div>
       ) : (
         <div className="rounded-2xl overflow-hidden shadow-md" style={{ animation: 'fadeInUp 0.35s ease-out' }}>
@@ -400,9 +509,12 @@ export default function DonorDashboard() {
                   {donor.bloodGroup}
                 </div>
                 <div className="min-w-0 pt-1 flex flex-col gap-0.5">
-                  <p className="font-bold text-white text-lg leading-tight truncate" style={{ fontFamily: 'Poppins, sans-serif' }}>
-                    {user?.name}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-white text-lg leading-tight truncate" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                      {user?.name}
+                    </p>
+                    <RatingStars rating={donorRating} />
+                  </div>
                   <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.8)' }}>{donor.address || 'No address set'}</p>
                   <p className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>
                     {donor.lastDonationDate
@@ -465,8 +577,14 @@ export default function DonorDashboard() {
 
             {/* Eligibility badge */}
             {eligibility && (
-              <div className="mt-3">
-                {eligibility.isEligible ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {!eligibility.healthEligible ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+                    style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.25)' }}
+                    title={eligibility.healthReason}>
+                    ⚕️ {eligibility.healthReason}
+                  </span>
+                ) : eligibility.isEligible ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
                     style={{ background: 'rgba(22,163,74,0.25)', color: '#86efac', border: '1px solid rgba(134,239,172,0.3)' }}>
                     ✅ Eligible to donate
@@ -479,22 +597,40 @@ export default function DonorDashboard() {
                 )}
               </div>
             )}
+
+            {/* Profile completeness */}
+            {profileCompleteness != null && profileCompleteness < 100 && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-white">Profile {profileCompleteness}% complete</span>
+                  {profileCompleteness < 80 && (
+                    <button onClick={() => setEditMode(true)} className="text-xs font-bold text-white underline">
+                      Complete now →
+                    </button>
+                  )}
+                </div>
+                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                  <div className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${profileCompleteness}%`, background: profileCompleteness < 80 ? '#FFD700' : '#86efac' }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ─── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="flex border-b-2 border-gray-100 gap-1 overflow-x-auto">
+      <div className="flex border-b-2 border-slate-100 gap-1 overflow-x-auto">
         {[['requests', '🩸 Blood Requests'], ['history', '📋 Donation History'], ['camps', '⛺ Blood Camps']].map(([tab, label]) => (
           <button key={tab} onClick={() => setLowerTab(tab)}
             className={`px-5 py-3 text-sm font-semibold transition-all duration-200 border-b-2 -mb-0.5 ${
               lowerTab === tab
                 ? 'border-[#C0162C] text-[#C0162C]'
-                : 'border-transparent text-gray-500 hover:text-[#1A1A2E]'
+                : 'border-transparent text-slate-500 hover:text-[#1A1A2E]'
             }`}>
             {label}
             {tab === 'history' && donations.length > 0 && (
-              <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">
+              <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
                 {donations.length}
               </span>
             )}
@@ -507,8 +643,8 @@ export default function DonorDashboard() {
         <div>
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <h2 className="section-title">Open Blood Requests</h2>
-            <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full font-medium">
-              {requests.length} found
+            <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full font-medium">
+              {displayedRequests.length} found
             </span>
           </div>
 
@@ -520,7 +656,7 @@ export default function DonorDashboard() {
                   🌟 Universal Donor — you can donate to all blood types
                 </span>
               ) : (
-                <span className="text-gray-500 text-xs">
+                <span className="text-slate-500 text-xs">
                   Showing requests your <strong className="text-[#C0162C]">{donor.bloodGroup}</strong> blood can help with:
                   {' '}
                   {(DONATABLE_TO[donor.bloodGroup] || []).map((g, i, arr) => (
@@ -565,7 +701,7 @@ export default function DonorDashboard() {
 
             <button type="button" onClick={handleGetLocation} disabled={locating}
               className={`text-sm py-2 px-4 h-[42px] rounded-xl font-semibold transition-all duration-200 ${
-                userLocation ? 'bg-blue-100 text-blue-700 border-2 border-blue-200' : 'btn-ghost border-2 border-gray-200'
+                userLocation ? 'bg-blue-100 text-blue-700 border-2 border-blue-200' : 'btn-ghost border-2 border-slate-200'
               }`}>
               {locating ? '⌛ Locating…' : userLocation ? '📍 Near Me' : '📍 Use Location'}
             </button>
@@ -577,6 +713,27 @@ export default function DonorDashboard() {
             )}
           </form>
 
+          {/* Urgency filter + sort */}
+          <div className="flex flex-wrap gap-3 items-end mb-4">
+            <div className="flex gap-1.5">
+              {['all', 'Critical', 'Urgent', 'Normal'].map((u) => (
+                <button key={u} onClick={() => setUrgencyFilter(u)}
+                  className={`text-xs px-3 py-1.5 rounded-full font-semibold border-2 transition-all duration-200 ${
+                    urgencyFilter === u ? 'bg-[#C0162C] border-[#C0162C] text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}>
+                  {u === 'all' ? 'All Urgency' : u}
+                </button>
+              ))}
+            </div>
+            <div className="min-w-[150px] ml-auto">
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="input-field text-sm py-1.5">
+                <option value="newest">Sort: Newest</option>
+                <option value="urgent">Sort: Most Urgent</option>
+                <option value="nearest" disabled={!userLocation}>Sort: Nearest{!userLocation ? ' (set location)' : ''}</option>
+              </select>
+            </div>
+          </div>
+
           {userLocation && (
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm px-4 py-2.5 rounded-xl mb-4">
               📍 Showing requests within <strong>{radius} km</strong> of your location, sorted by distance
@@ -587,18 +744,20 @@ export default function DonorDashboard() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
             </div>
-          ) : requests.length === 0 ? (
+          ) : displayedRequests.length === 0 ? (
             <div className="card text-center py-16">
               <div className="text-5xl mb-4">🩸</div>
               <h3 className="font-bold text-[#1A1A2E] mb-2">No Requests Found</h3>
-              <p className="text-gray-400 text-sm">
-                {userLocation
+              <p className="text-slate-400 text-sm">
+                {requests.length > 0
+                  ? 'No requests match your urgency filter'
+                  : userLocation
                   ? `No compatible requests within ${radius} km`
                   : filters.bloodGroup === ''
                     ? 'No open requests compatible with your blood type right now'
                     : 'No open blood requests match your filters'}
               </p>
-              {filters.bloodGroup === '' && (
+              {filters.bloodGroup === '' && requests.length === 0 && (
                 <button
                   onClick={() => { setFilters((f) => ({ ...f, bloodGroup: 'all' })); fetchRequests(); }}
                   className="mt-4 text-sm text-[#C0162C] font-semibold hover:underline">
@@ -608,14 +767,14 @@ export default function DonorDashboard() {
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {requests.map((req) => {
+              {displayedRequests.map((req) => {
                 const cfg = urgencyCfg[req.urgency] || urgencyCfg.Normal;
                 return (
                   <div key={req._id} className={urgencyCardCls[req.urgency] || 'req-card req-card-normal'}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <h3 className="font-bold text-[#1A1A2E] text-sm leading-snug truncate">{req.hospitalName}</h3>
-                        <p className="text-gray-400 text-xs mt-0.5 truncate">{req.address}</p>
+                        <p className="text-slate-400 text-xs mt-0.5 truncate">{req.address}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <span className={cfg.badge}>{cfg.icon} {req.urgency}</span>
@@ -628,11 +787,11 @@ export default function DonorDashboard() {
                     <div className="flex gap-3">
                       <div className="flex-1 bg-white/80 rounded-xl p-3 text-center border border-current/10">
                         <p className="font-bold text-[#C0162C] text-xl" style={{ fontFamily: 'Poppins, sans-serif' }}>{req.bloodGroup}</p>
-                        <p className="text-gray-400 text-xs">Blood Type</p>
+                        <p className="text-slate-400 text-xs">Blood Type</p>
                       </div>
-                      <div className="flex-1 bg-white/80 rounded-xl p-3 text-center border border-gray-100">
+                      <div className="flex-1 bg-white/80 rounded-xl p-3 text-center border border-slate-100">
                         <p className="font-bold text-[#1A1A2E] text-xl" style={{ fontFamily: 'Poppins, sans-serif' }}>{req.unitsRequired}</p>
-                        <p className="text-gray-400 text-xs">Units Needed</p>
+                        <p className="text-slate-400 text-xs">Units Needed</p>
                       </div>
                     </div>
 
@@ -648,16 +807,16 @@ export default function DonorDashboard() {
                       </span>
                     )}
                     {req.compatibility === 'none' && (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 border border-gray-200 w-fit">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-400 border border-slate-200 w-fit">
                         ✗ Your type cannot donate here
                       </span>
                     )}
 
                     {req.notes && (
-                      <p className="text-gray-500 text-xs border-l-2 border-[#C0162C]/30 pl-3">{req.notes}</p>
+                      <p className="text-slate-500 text-xs border-l-2 border-[#C0162C]/30 pl-3">{req.notes}</p>
                     )}
 
-                    <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
+                    <div className="flex items-center justify-between text-xs text-slate-400 mt-auto">
                       <span>{req.responses?.length || 0} responded</span>
                       <div className="flex items-center gap-2">
                         {req.expiresAt && (
@@ -673,11 +832,17 @@ export default function DonorDashboard() {
                     {req.hasResponded && req.myResponse?.status === 'Accepted' && (
                       <div className="flex items-start gap-2 bg-green-50 border-2 border-green-200 rounded-xl p-3">
                         <span className="flex-shrink-0 text-green-600">✅</span>
-                        <div>
+                        <div className="flex-1">
                           <p className="text-xs font-bold text-green-800">You've been accepted!</p>
                           <p className="text-xs text-green-700 mt-0.5">
                             Contact <strong>{req.hospitalName}</strong> directly to confirm your donation.
                           </p>
+                          {!ratedRequestIds.has(req._id) && (
+                            <button onClick={() => setRatingRequest(req)}
+                              className="text-xs font-bold text-amber-700 underline mt-1.5">
+                              ⭐ Rate this hospital
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -689,7 +854,7 @@ export default function DonorDashboard() {
                             ✅ Accepted
                           </div>
                         ) : req.myResponse?.status === 'Rejected' ? (
-                          <div className="flex-1 py-2.5 text-center rounded-xl text-sm font-medium bg-gray-100 text-gray-500 border-2 border-gray-200">
+                          <div className="flex-1 py-2.5 text-center rounded-xl text-sm font-medium bg-slate-100 text-slate-500 border-2 border-slate-200">
                             Not needed this time
                           </div>
                         ) : (
@@ -697,8 +862,13 @@ export default function DonorDashboard() {
                             ⏳ Response Pending
                           </div>
                         )
+                      ) : eligibility && !eligibility.healthEligible ? (
+                        <div className="flex-1 py-2.5 text-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border-2 border-slate-200 cursor-not-allowed"
+                          title={eligibility.healthReason}>
+                          ⚕️ Not Eligible
+                        </div>
                       ) : eligibility && !eligibility.isEligible ? (
-                        <div className="flex-1 py-2.5 text-center rounded-xl text-xs font-semibold bg-gray-100 text-gray-400 border-2 border-gray-200 cursor-not-allowed"
+                        <div className="flex-1 py-2.5 text-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border-2 border-slate-200 cursor-not-allowed"
                           title={`You can donate again on ${new Date(eligibility.nextEligibleDate).toLocaleDateString()}`}>
                           🚫 Eligible {getExpiryLabel(eligibility.nextEligibleDate).replace('in ', 'in ')}
                         </div>
@@ -718,7 +888,7 @@ export default function DonorDashboard() {
                       )}
                       <button onClick={() => handleCopyLink(req._id)}
                         className={`px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border-2 ${
-                          copiedId === req._id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-gray-500 border-gray-200 hover:border-[#C0162C] hover:text-[#C0162C]'
+                          copiedId === req._id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-200 hover:border-[#C0162C] hover:text-[#C0162C]'
                         }`}
                         title="Copy shareable link">
                         {copiedId === req._id ? '✓' : '🔗'}
@@ -751,7 +921,7 @@ export default function DonorDashboard() {
             <div className="card text-center py-16">
               <div className="text-5xl mb-4">⛺</div>
               <h3 className="font-bold text-[#1A1A2E] mb-2">No Upcoming Camps</h3>
-              <p className="text-gray-400 text-sm">Check back later for blood donation drives near you</p>
+              <p className="text-slate-400 text-sm">Check back later for blood donation drives near you</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -772,13 +942,13 @@ export default function DonorDashboard() {
                     </div>
 
                     <div className="space-y-1">
-                      <p className="text-xs text-gray-600 font-medium">🏥 {camp.hospitalName}</p>
-                      <p className="text-xs text-gray-500">📅 {new Date(camp.date).toLocaleString()}</p>
-                      <p className="text-xs text-gray-500">📍 {camp.address}</p>
+                      <p className="text-xs text-slate-600 font-medium">🏥 {camp.hospitalName}</p>
+                      <p className="text-xs text-slate-500">📅 {new Date(camp.date).toLocaleString()}</p>
+                      <p className="text-xs text-slate-500">📍 {camp.address}</p>
                     </div>
 
                     {camp.description && (
-                      <p className="text-xs text-gray-500 border-l-2 border-[#C0162C]/30 pl-2 line-clamp-2">
+                      <p className="text-xs text-slate-500 border-l-2 border-[#C0162C]/30 pl-2 line-clamp-2">
                         {camp.description}
                       </p>
                     )}
@@ -786,14 +956,17 @@ export default function DonorDashboard() {
                     <div className="flex flex-wrap gap-1">
                       {camp.targetBloodGroups?.map((bg) => (
                         <span key={bg} className="text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: '#FFF0F0', color: '#C0162C', border: '1px solid #ffcdd2' }}>
+                          style={{ background: '#FFF5F5', color: '#C0162C', border: '1px solid #ffcdd2' }}>
                           {bg}
                         </span>
                       ))}
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
-                      <span>{camp.registrations?.length || 0} registered</span>
+                    <div className="flex items-center justify-between text-xs text-slate-400 mt-auto">
+                      <span>
+                        {camp.registrations?.length || 0} registered
+                        {camp.expectedDonors > 0 && ` / ${camp.expectedDonors} expected`}
+                      </span>
                     </div>
 
                     <button
@@ -817,7 +990,28 @@ export default function DonorDashboard() {
       {/* ─── Donation History Tab ─────────────────────────────────────────── */}
       {lowerTab === 'history' && (
         <div>
-          <h2 className="section-title mb-6">Donation History</h2>
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+            <h2 className="section-title">Donation History</h2>
+            {donations.length > 0 && (
+              <button onClick={handleExportHistoryPDF} className="btn-secondary text-xs py-2 px-4">🖨 Export PDF</button>
+            )}
+          </div>
+
+          {donations.length > 0 && (
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              {[
+                { label: 'Total Donations', value: donations.length, icon: '💉', color: '#C0162C' },
+                { label: 'Lives Saved (est.)', value: donations.length * 3, icon: '❤️', color: '#16a34a' },
+                { label: 'Month Streak', value: computeDonationStreak(donations), icon: '🔥', color: '#ea580c' },
+              ].map((s) => (
+                <div key={s.label} className="card text-center py-5">
+                  <div className="text-2xl mb-1">{s.icon}</div>
+                  <p className="font-bold text-2xl" style={{ color: s.color, fontFamily: 'Poppins, sans-serif' }}>{s.value}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           {badges.length > 0 && (
             <div className="card mb-6">
@@ -830,7 +1024,7 @@ export default function DonorDashboard() {
                     style={{ background: 'linear-gradient(135deg, #FFF9E6, #FFFACD)', border: '2px solid #FFD700' }}>
                     <span className="text-3xl">{b.icon}</span>
                     <span className="text-xs font-bold text-[#1A1A2E]">{b.label}</span>
-                    <span className="text-xs text-gray-500 text-center leading-tight">{b.description}</span>
+                    <span className="text-xs text-slate-500 text-center leading-tight">{b.description}</span>
                   </div>
                 ))}
               </div>
@@ -853,7 +1047,7 @@ export default function DonorDashboard() {
             <div className="card text-center py-16">
               <div className="text-5xl mb-4">💉</div>
               <h3 className="font-bold text-[#1A1A2E] mb-2">No Donations Yet</h3>
-              <p className="text-gray-400 text-sm">Respond to a blood request to start your donation journey</p>
+              <p className="text-slate-400 text-sm">Respond to a blood request to start your donation journey</p>
               <button onClick={() => setLowerTab('requests')} className="btn-primary mt-4 text-sm">
                 Browse Requests →
               </button>
@@ -867,7 +1061,7 @@ export default function DonorDashboard() {
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div>
                         <p className="font-bold text-[#1A1A2E] text-sm">{d.hospitalName}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">
+                        <p className="text-slate-400 text-xs mt-0.5">
                           {d.bloodGroup} · {d.units || 1} unit{d.units !== 1 ? 's' : ''}
                         </p>
                       </div>
@@ -875,7 +1069,7 @@ export default function DonorDashboard() {
                         <span className={d.status === 'Verified' ? 'badge-gold' : 'badge-fulfilled'}>
                           {d.status === 'Verified' ? '⭐ Verified' : '✅ Completed'}
                         </span>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-slate-400">
                           {new Date(d.donationDate).toLocaleDateString()}
                         </p>
                         <button onClick={() => handleCertificate(d)}

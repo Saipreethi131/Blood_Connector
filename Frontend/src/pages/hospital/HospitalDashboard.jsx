@@ -4,12 +4,15 @@ import toast from 'react-hot-toast';
 import api from '../../api/axios.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
+import { downloadCSV, openPrintTable } from '../../utils/exportHelpers.js';
+import RateModal from '../../components/RateModal.jsx';
+import { RatingStars } from '../../components/RatingStars.jsx';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const CAMP_STATUS_COLORS = {
   Upcoming:  { bg: 'bg-blue-50',   text: 'text-blue-700',  border: 'border-blue-200' },
   Ongoing:   { bg: 'bg-green-50',  text: 'text-green-700', border: 'border-green-200' },
-  Completed: { bg: 'bg-gray-50',   text: 'text-gray-600',  border: 'border-gray-200' },
+  Completed: { bg: 'bg-slate-50',   text: 'text-slate-600',  border: 'border-slate-200' },
   Cancelled: { bg: 'bg-red-50',    text: 'text-red-600',   border: 'border-red-200' },
 };
 const URGENCY_LEVELS = ['Normal', 'Urgent', 'Critical'];
@@ -48,6 +51,20 @@ function SkeletonRow() {
   );
 }
 
+function HospitalProfileSkeleton() {
+  return (
+    <div className="rounded-2xl overflow-hidden shadow-md">
+      <div className="px-6 pt-6 pb-6 bg-slate-100 flex items-center gap-4">
+        <div className="skeleton skeleton-circle w-16 h-16" />
+        <div className="flex-1 space-y-2">
+          <div className="skeleton skeleton-title w-48" />
+          <div className="skeleton skeleton-text w-64" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Responses Modal ─────────────────────────────────────────────────────── */
 function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
   const responses = request.responses || [];
@@ -63,23 +80,23 @@ function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
         style={{ animation: 'slideUp 0.2s ease-out' }}>
 
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-start justify-between p-5 border-b border-slate-100 flex-shrink-0">
           <div>
             <h2 className="font-bold text-[#1A1A2E] text-lg" style={{ fontFamily: 'Poppins, sans-serif' }}>
               Donor Responses
             </h2>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-sm text-slate-500 mt-0.5">
               {request.bloodGroup} · {request.unitsRequired} unit(s) needed
             </p>
             <div className="flex gap-3 mt-1">
               <span className="text-xs font-semibold text-amber-600">{pendingCount} pending</span>
               <span className="text-xs font-semibold text-green-600">{acceptedCount} accepted</span>
-              <span className="text-xs font-semibold text-gray-400">{rejectedCount} rejected</span>
+              <span className="text-xs font-semibold text-slate-400">{rejectedCount} rejected</span>
             </div>
           </div>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center
-              transition-colors text-gray-600 font-bold text-lg flex-shrink-0">
+            className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center
+              transition-colors text-slate-600 font-bold text-lg flex-shrink-0">
             ×
           </button>
         </div>
@@ -90,7 +107,7 @@ function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
             <div className="text-center py-14">
               <div className="text-5xl mb-3">🔔</div>
               <p className="font-semibold text-[#1A1A2E]">No responses yet</p>
-              <p className="text-sm text-gray-400 mt-1">Donors will appear here once they respond</p>
+              <p className="text-sm text-slate-400 mt-1">Donors will appear here once they respond</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -105,8 +122,8 @@ function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
                   <div key={resp._id || donorId}
                     className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 ${
                       isAccepted ? 'border-green-200 bg-green-50'
-                      : isRejected ? 'border-gray-200 bg-gray-50 opacity-60'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
+                      : isRejected ? 'border-slate-200 bg-slate-50 opacity-60'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}>
 
                     {/* Avatar */}
@@ -122,15 +139,15 @@ function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
                       </p>
                       <div className="flex items-center gap-2 flex-wrap mt-0.5">
                         {resp.bloodGroup && (
-                          <span className="text-xs font-bold text-[#C0162C] bg-[#FFF0F0] px-2 py-0.5 rounded-full border border-red-100">
+                          <span className="text-xs font-bold text-[#C0162C] bg-[#FFF5F5] px-2 py-0.5 rounded-full border border-red-100">
                             {resp.bloodGroup}
                           </span>
                         )}
                         {resp.phone && (
-                          <span className="text-xs text-gray-600 font-medium">📞 {resp.phone}</span>
+                          <span className="text-xs text-slate-600 font-medium">📞 {resp.phone}</span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p className="text-xs text-slate-400 mt-0.5">
                         {new Date(resp.respondedAt).toLocaleString()}
                       </p>
                     </div>
@@ -144,7 +161,7 @@ function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
                         </span>
                       ) : isRejected ? (
                         <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl
-                          bg-gray-100 text-gray-500 border-2 border-gray-200">
+                          bg-slate-100 text-slate-500 border-2 border-slate-200">
                           ✗ Rejected
                         </span>
                       ) : request.status === 'Pending' ? (
@@ -174,8 +191,8 @@ function ResponsesModal({ request, onClose, onAction, processingDonorId }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 pb-5 pt-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
-          <p className="text-xs text-gray-400">
+        <div className="px-5 pb-5 pt-3 border-t border-slate-100 flex items-center justify-between flex-shrink-0">
+          <p className="text-xs text-slate-400">
             {responses.length} total · {acceptedCount} accepted · {rejectedCount} rejected
           </p>
           <button onClick={onClose} className="btn-secondary text-sm py-2 px-5">Close</button>
@@ -191,7 +208,15 @@ export default function HospitalDashboard() {
   const { unreadCount } = useSocket();
 
   const [hospital, setHospital] = useState(null);
+  const [profileCompleteness, setProfileCompleteness] = useState(null);
+  const [hospitalRating, setHospitalRating] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({ address: '', emergencyContact: '' });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [ratingRequest, setRatingRequest] = useState(null);
+  const [ratedRequestIds, setRatedRequestIds] = useState(new Set());
   const [activeTab, setActiveTab] = useState('Post Request');
   const [stats, setStats] = useState(null);
 
@@ -203,6 +228,8 @@ export default function HospitalDashboard() {
 
   const [donorSearch, setDonorSearch] = useState({ bloodGroup: 'A+', city: '' });
   const [showCompatible, setShowCompatible] = useState(false);
+  const [includeUnavailable, setIncludeUnavailable] = useState(false);
+  const [donorSort, setDonorSort] = useState('default');
   const [donors, setDonors] = useState([]);
   const [searchingDonors, setSearchingDonors] = useState(false);
   const [donorSearchDone, setDonorSearchDone] = useState(false);
@@ -220,7 +247,7 @@ export default function HospitalDashboard() {
   const [camps, setCamps] = useState([]);
   const [loadingCamps, setLoadingCamps] = useState(false);
   const [campForm, setCampForm] = useState({
-    title: '', description: '', date: '', address: '', targetBloodGroups: [],
+    title: '', description: '', date: '', address: '', city: '', expectedDonors: '', targetBloodGroups: [],
   });
   const [creatingCamp, setCreatingCamp] = useState(false);
   const [updatingCampId, setUpdatingCampId] = useState(null);
@@ -231,11 +258,42 @@ export default function HospitalDashboard() {
   const viewingRequest = viewingRequestId ? myRequests.find((r) => r._id === viewingRequestId) : null;
 
   const fetchProfile = async () => {
+    setLoadingProfile(true);
+    setProfileError(false);
     try {
       const { data } = await api.get('/hospital/profile');
+      const profile = data.data.hospital ?? null;
+      setHospital(profile);
+      setProfileCompleteness(data.data.profileCompleteness ?? null);
+      setHospitalRating(data.data.rating ?? null);
+      if (profile) {
+        setEditForm({
+          address: profile.address || '',
+          emergencyContact: profile.emergencyContact || '',
+        });
+      }
+    } catch {
+      setProfileError(true);
+      toast.error('Failed to load hospital profile');
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    try {
+      const { data } = await api.post('/hospital/profile', editForm);
       setHospital(data.data.hospital);
-    } catch { toast.error('Failed to load hospital profile'); }
-    finally { setLoadingProfile(false); }
+      setProfileCompleteness(data.data.profileCompleteness ?? null);
+      setEditMode(false);
+      toast.success('Profile updated successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const fetchMyRequests = async () => {
@@ -244,11 +302,13 @@ export default function HospitalDashboard() {
       const { data } = await api.get('/hospital/requests');
       const reqs = data.data.requests;
       setMyRequests(reqs);
+      const fulfilledCount = reqs.filter((r) => r.status === 'Fulfilled').length;
       setStats({
         total: reqs.length,
         open: reqs.filter((r) => r.status === 'Pending').length,
-        fulfilled: reqs.filter((r) => r.status === 'Fulfilled').length,
+        fulfilled: fulfilledCount,
         responses: reqs.reduce((s, r) => s + (r.responses?.length || 0), 0),
+        fulfillmentRate: reqs.length > 0 ? Math.round((fulfilledCount / reqs.length) * 100) : 0,
       });
     } catch { toast.error('Failed to load your requests'); }
     finally { setLoadingRequests(false); }
@@ -272,7 +332,7 @@ export default function HospitalDashboard() {
     finally { setLoadingCamps(false); }
   };
 
-  useEffect(() => { fetchProfile(); fetchMyRequests(); }, []);
+  useEffect(() => { fetchProfile(); fetchMyRequests(); fetchInventory(); }, []);
   useEffect(() => {
     if (activeTab === 'My Requests') fetchMyRequests();
     if (activeTab === 'Inventory') fetchInventory();
@@ -341,6 +401,7 @@ export default function HospitalDashboard() {
     try {
       const params = { bloodGroup: donorSearch.bloodGroup };
       if (showCompatible) params.compatible = 'true';
+      if (includeUnavailable) params.includeUnavailable = 'true';
       if (donorLocation) { params.lat = donorLocation.lat; params.lng = donorLocation.lng; params.radius = donorRadius; }
       else if (donorSearch.city.trim()) { params.city = donorSearch.city.trim(); }
       const { data } = await api.get('/hospital/donors', { params });
@@ -373,9 +434,9 @@ export default function HospitalDashboard() {
     }
     setCreatingCamp(true);
     try {
-      await api.post('/camps', campForm);
+      await api.post('/camps', { ...campForm, expectedDonors: parseInt(campForm.expectedDonors, 10) || 0 });
       toast.success('Blood camp created! Donors are being notified.');
-      setCampForm({ title: '', description: '', date: '', address: '', targetBloodGroups: [] });
+      setCampForm({ title: '', description: '', date: '', address: '', city: '', expectedDonors: '', targetBloodGroups: [] });
       fetchCamps();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to create camp'); }
     finally { setCreatingCamp(false); }
@@ -407,8 +468,48 @@ export default function HospitalDashboard() {
     setTimeout(() => setCopiedId(null), 2500);
   };
 
+  const handleExportCSV = () => {
+    if (myRequests.length === 0) { toast.error('No requests to export'); return; }
+    downloadCSV('blood-requests.csv', myRequests.map((r) => ({
+      BloodGroup: r.bloodGroup,
+      UnitsRequired: r.unitsRequired,
+      Urgency: r.urgency,
+      Status: r.status,
+      Responses: r.responses?.length || 0,
+      PostedOn: new Date(r.createdAt).toLocaleString(),
+    })));
+  };
+
+  const handleExportPDF = () => {
+    if (myRequests.length === 0) { toast.error('No requests to export'); return; }
+    openPrintTable('My Blood Requests', [
+      { key: 'bloodGroup', label: 'Blood Group' },
+      { key: 'unitsRequired', label: 'Units' },
+      { key: 'urgency', label: 'Urgency' },
+      { key: 'status', label: 'Status' },
+      { key: 'responses', label: 'Responses' },
+      { key: 'postedOn', label: 'Posted On' },
+    ], myRequests.map((r) => ({
+      bloodGroup: r.bloodGroup,
+      unitsRequired: r.unitsRequired,
+      urgency: r.urgency,
+      status: r.status,
+      responses: r.responses?.length || 0,
+      postedOn: new Date(r.createdAt).toLocaleDateString(),
+    })));
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+
+      {ratingRequest && (
+        <RateModal
+          requestId={ratingRequest._id}
+          targetLabel={ratingRequest.fulfilledBy?.donorName || 'Donor'}
+          onClose={() => setRatingRequest(null)}
+          onSubmitted={() => setRatedRequestIds((prev) => new Set([...prev, ratingRequest._id]))}
+        />
+      )}
 
       {/* Responses modal */}
       {viewingRequest && (
@@ -426,12 +527,12 @@ export default function HospitalDashboard() {
           <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
             Hospital Dashboard
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className="text-slate-500 text-sm mt-0.5">
             <span className="font-semibold text-[#C0162C]">{loadingProfile ? '…' : hospital?.hospitalName || user?.name}</span>
           </p>
         </div>
         <Link to="/notifications"
-          className="relative inline-flex items-center gap-2 bg-white border-2 border-gray-200 text-[#1A1A2E] px-4 py-2.5 rounded-xl font-semibold text-sm hover:border-[#C0162C] hover:text-[#C0162C] transition-all duration-200">
+          className="relative inline-flex items-center gap-2 bg-white border-2 border-slate-200 text-[#1A1A2E] px-4 py-2.5 rounded-xl font-semibold text-sm hover:border-[#C0162C] hover:text-[#C0162C] transition-all duration-200">
           🔔 Notifications
           {unreadCount > 0 && (
             <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
@@ -443,32 +544,103 @@ export default function HospitalDashboard() {
       </div>
 
       {/* ─── Profile Card ─────────────────────────────────────────────────── */}
-      {!loadingProfile && hospital && (
+      {loadingProfile ? <HospitalProfileSkeleton /> : editMode ? (
+        <div className="card">
+          <h2 className="text-lg font-bold text-[#1A1A2E] mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>Edit Profile</h2>
+          <form onSubmit={handleSaveProfile} className="space-y-4 max-w-md">
+            <div>
+              <label className="input-label">Address</label>
+              <input type="text" required value={editForm.address}
+                onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} className="input-field" />
+            </div>
+            <div>
+              <label className="input-label">Emergency Contact</label>
+              <input type="tel" required value={editForm.emergencyContact}
+                onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })}
+                placeholder="+91 9999999999" className="input-field" />
+            </div>
+            <p className="text-xs text-slate-400">
+              Hospital name and license number are set at registration and verified by an administrator — contact support to change them.
+            </p>
+            <div className="flex gap-3">
+              <button type="submit" disabled={savingProfile} className="btn-primary">
+                {savingProfile ? 'Saving…' : 'Save Changes'}
+              </button>
+              <button type="button" onClick={() => setEditMode(false)} className="btn-secondary">Cancel</button>
+            </div>
+          </form>
+        </div>
+      ) : !hospital ? (
+        <div className="card text-center py-10 space-y-4">
+          <div className="text-5xl">{profileError ? '⚠️' : '🏥'}</div>
+          <h2 className="text-lg font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            {profileError ? "Couldn't Load Your Profile" : 'Hospital Profile Not Found'}
+          </h2>
+          <p className="text-slate-500 text-sm max-w-xs mx-auto">
+            {profileError
+              ? 'Check your connection and try again.'
+              : 'Your hospital profile could not be found. Please contact support.'}
+          </p>
+          {profileError && (
+            <button onClick={fetchProfile} className="btn-secondary text-sm px-6 py-2.5">Retry</button>
+          )}
+        </div>
+      ) : (
         <div className="rounded-2xl overflow-hidden shadow-md" style={{ animation: 'fadeInUp 0.35s ease-out' }}>
           <div className="px-6 pt-6 pb-6"
-            style={{ background: 'linear-gradient(135deg, #1A1A2E 0%, #2d1b4e 45%, #C0162C 100%)' }}>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
-                style={{
-                  background: 'rgba(255,255,255,0.15)',
-                  backdropFilter: 'blur(8px)',
-                  border: '2px solid rgba(255,255,255,0.5)',
-                }}>
-                🏥
+            style={{ background: 'linear-gradient(135deg, #C0162C 0%, #8B0000 100%)' }}>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-4 justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
+                  style={{
+                    background: 'rgba(255,255,255,0.15)',
+                    backdropFilter: 'blur(8px)',
+                    border: '2px solid rgba(255,255,255,0.5)',
+                  }}>
+                  🏥
+                </div>
+                <div className="min-w-0 flex flex-col gap-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-bold text-white text-xl leading-tight truncate"
+                      style={{ fontFamily: 'Poppins, sans-serif' }}>
+                      {hospital.hospitalName}
+                    </h2>
+                    {user?.verificationStatus === 'approved' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold flex-shrink-0"
+                        style={{ background: 'rgba(34,197,94,0.2)', color: '#86efac', border: '1px solid rgba(134,239,172,0.3)' }}>
+                        ✅ Verified
+                      </span>
+                    )}
+                    <RatingStars rating={hospitalRating} />
+                  </div>
+                  <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                    📍 {hospital.address}
+                  </p>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                    Reg: {hospital.licenseNumber} · 📞 {hospital.emergencyContact}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 flex flex-col gap-1">
-                <h2 className="font-bold text-white text-xl leading-tight truncate"
-                  style={{ fontFamily: 'Poppins, sans-serif' }}>
-                  {hospital.hospitalName}
-                </h2>
-                <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.85)' }}>
-                  📍 {hospital.address}
-                </p>
-                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  Reg: {hospital.licenseNumber} · 📞 {hospital.emergencyContact}
-                </p>
-              </div>
+              <button onClick={() => setEditMode(true)}
+                className="text-sm py-2 px-4 rounded-xl font-semibold transition-all duration-200 flex-shrink-0"
+                style={{ border: '2px solid rgba(255,255,255,0.7)', color: '#fff', background: 'rgba(255,255,255,0.1)' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}>
+                Edit Profile
+              </button>
             </div>
+
+            {profileCompleteness != null && profileCompleteness < 100 && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-white">Profile {profileCompleteness}% complete</span>
+                </div>
+                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                  <div className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${profileCompleteness}%`, background: profileCompleteness < 80 ? '#FFD700' : '#86efac' }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -478,7 +650,7 @@ export default function HospitalDashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: 'Total Requests',  value: stats.total,     icon: '📋', accentColor: '#3b82f6', iconBg: '#eff6ff' },
-            { label: 'Open Requests',   value: stats.open,      icon: '🩸', accentColor: '#C0162C', iconBg: '#FFF0F0' },
+            { label: 'Open Requests',   value: stats.open,      icon: '🩸', accentColor: '#C0162C', iconBg: '#FFF5F5' },
             { label: 'Fulfilled',       value: stats.fulfilled, icon: '✅', accentColor: '#16a34a', iconBg: '#f0fdf4' },
             { label: 'Total Responses', value: stats.responses, icon: '🤝', accentColor: '#7c3aed', iconBg: '#f5f3ff' },
           ].map((s) => (
@@ -497,7 +669,7 @@ export default function HospitalDashboard() {
                   style={{ fontSize: '2rem', fontFamily: 'Poppins, sans-serif' }}>
                   {s.value}
                 </p>
-                <p className="font-medium text-gray-500 mt-0.5 truncate" style={{ fontSize: '0.75rem' }}>
+                <p className="font-medium text-slate-500 mt-0.5 truncate" style={{ fontSize: '0.75rem' }}>
                   {s.label}
                 </p>
               </div>
@@ -507,7 +679,7 @@ export default function HospitalDashboard() {
       )}
 
       {/* ─── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="flex border-b-2 border-gray-100 gap-0 overflow-x-auto">
+      <div className="flex border-b-2 border-slate-100 gap-0 overflow-x-auto">
         {[
           { id: 'Post Request',  icon: '🩸' },
           { id: 'My Requests',   icon: '📋' },
@@ -519,7 +691,7 @@ export default function HospitalDashboard() {
             className={`flex items-center gap-1.5 px-6 py-3.5 text-sm whitespace-nowrap transition-all duration-200 border-b-2 -mb-0.5 ${
               activeTab === id
                 ? 'border-[#C0162C] text-[#C0162C] font-bold'
-                : 'border-transparent text-gray-500 font-medium hover:text-[#1A1A2E] hover:bg-gray-50'
+                : 'border-transparent text-slate-500 font-medium hover:text-[#1A1A2E] hover:bg-slate-50'
             }`}>
             {icon} {id}
           </button>
@@ -543,6 +715,17 @@ export default function HospitalDashboard() {
                     onChange={(e) => setRequestForm({ ...requestForm, bloodGroup: e.target.value })} className="input-field">
                     {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
                   </select>
+                  {(() => {
+                    const own = inventory.find((i) => i.bloodGroup === requestForm.bloodGroup);
+                    if (!own) return null;
+                    return (
+                      <p className="text-xs text-slate-400 mt-1.5">
+                        🏦 You currently have <strong className={own.units === 0 ? 'text-[#C0162C]' : own.units < 5 ? 'text-orange-500' : 'text-green-600'}>
+                          {own.units} unit{own.units !== 1 ? 's' : ''}
+                        </strong> of {requestForm.bloodGroup} in your own inventory
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="input-label">Units Required</label>
@@ -562,7 +745,7 @@ export default function HospitalDashboard() {
                           ? u === 'Critical' ? 'bg-red-50 border-[#C0162C] text-[#C0162C]'
                             : u === 'Urgent' ? 'bg-orange-50 border-orange-500 text-orange-600'
                             : 'bg-green-50 border-green-500 text-green-700'
-                          : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
                       }`}>
                       {u === 'Critical' ? '🚨' : u === 'Urgent' ? '⚠️' : '🟢'} {u}
                     </button>
@@ -609,7 +792,7 @@ export default function HospitalDashboard() {
               <h3 className="font-bold text-[#1A1A2E] mb-3 text-sm" style={{ fontFamily: 'Poppins, sans-serif' }}>
                 💡 Tips for a Good Request
               </h3>
-              <ul className="space-y-2.5 text-sm text-gray-600">
+              <ul className="space-y-2.5 text-sm text-slate-600">
                 <li className="flex items-start gap-2">
                   <span className="flex-shrink-0 mt-0.5">🩸</span>
                   <span>Double-check the blood group before posting</span>
@@ -640,9 +823,10 @@ export default function HospitalDashboard() {
                     { label: 'Active Now',      value: stats.open,      color: '#C0162C' },
                     { label: 'Fulfilled',       value: stats.fulfilled, color: '#16a34a' },
                     { label: 'Donor Responses', value: stats.responses, color: '#7c3aed' },
+                    { label: 'Fulfillment Rate', value: `${stats.fulfillmentRate}%`, color: '#16a34a' },
                   ].map((row) => (
                     <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">{row.label}</span>
+                      <span className="text-sm text-slate-500">{row.label}</span>
                       <span className="font-bold text-sm" style={{ color: row.color }}>{row.value}</span>
                     </div>
                   ))}
@@ -656,13 +840,19 @@ export default function HospitalDashboard() {
       {/* ─── My Requests Tab ──────────────────────────────────────────────── */}
       {activeTab === 'My Requests' && (
         <div>
+          {myRequests.length > 0 && (
+            <div className="flex justify-end gap-2 mb-4">
+              <button onClick={handleExportCSV} className="btn-secondary text-xs py-2 px-4">📄 Export CSV</button>
+              <button onClick={handleExportPDF} className="btn-secondary text-xs py-2 px-4">🖨 Export PDF</button>
+            </div>
+          )}
           {loadingRequests ? (
             <div className="space-y-3">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>
           ) : myRequests.length === 0 ? (
             <div className="card text-center py-16">
               <div className="text-5xl mb-4">📋</div>
               <h3 className="font-bold text-[#1A1A2E] mb-2">No Requests Yet</h3>
-              <p className="text-gray-400 text-sm mb-6">Post your first blood request to find matching donors</p>
+              <p className="text-slate-400 text-sm mb-6">Post your first blood request to find matching donors</p>
               <button onClick={() => setActiveTab('Post Request')} className="btn-primary text-sm">
                 Post First Request →
               </button>
@@ -691,20 +881,27 @@ export default function HospitalDashboard() {
                               <span className="badge-fulfilled">✓ Donor Accepted</span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-600 font-medium">
+                          <p className="text-sm text-slate-600 font-medium">
                             {req.unitsRequired} unit(s) · {responseCount} donor(s) responded
                           </p>
                           {req.status === 'Fulfilled' && req.fulfilledBy?.donorName && (
-                            <p className="text-xs text-green-600 font-semibold mt-0.5">
-                              ✅ Fulfilled by {req.fulfilledBy.donorName}
-                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-xs text-green-600 font-semibold">
+                                ✅ Fulfilled by {req.fulfilledBy.donorName}
+                              </p>
+                              {!ratedRequestIds.has(req._id) && (
+                                <button onClick={() => setRatingRequest(req)} className="text-xs font-bold text-amber-700 underline">
+                                  ⭐ Rate donor
+                                </button>
+                              )}
+                            </div>
                           )}
-                          <p className="text-xs text-gray-400 mt-0.5">{new Date(req.createdAt).toLocaleString()}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{new Date(req.createdAt).toLocaleString()}</p>
                         </div>
                       </div>
 
                       {req.notes && (
-                        <p className="text-gray-500 text-xs sm:flex-1 sm:max-w-[200px] border-l-2 border-gray-200 pl-3 truncate">
+                        <p className="text-slate-500 text-xs sm:flex-1 sm:max-w-[200px] border-l-2 border-slate-200 pl-3 truncate">
                           {req.notes}
                         </p>
                       )}
@@ -717,7 +914,7 @@ export default function HospitalDashboard() {
                           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 text-xs font-semibold transition-all duration-200 ${
                             responseCount > 0
                               ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                              : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
+                              : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'
                           }`}>
                           👥 {responseCount}
                         </button>
@@ -726,7 +923,7 @@ export default function HospitalDashboard() {
                           className={`p-2.5 rounded-xl border-2 text-sm transition-all duration-200 ${
                             copiedId === req._id
                               ? 'bg-green-50 border-green-300 text-green-700'
-                              : 'bg-white border-gray-200 text-gray-500 hover:border-[#C0162C] hover:text-[#C0162C]'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-[#C0162C] hover:text-[#C0162C]'
                           }`}
                           title="Copy shareable link">
                           {copiedId === req._id ? '✓' : '🔗'}
@@ -739,7 +936,7 @@ export default function HospitalDashboard() {
                               ✓ Fulfilled
                             </button>
                             <button onClick={() => handleUpdateStatus(req._id, 'Cancelled')}
-                              className="text-xs px-3 py-2 bg-gray-100 text-gray-600 border-2 border-gray-200 rounded-xl hover:bg-gray-200 font-semibold transition-all duration-200">
+                              className="text-xs px-3 py-2 bg-slate-100 text-slate-600 border-2 border-slate-200 rounded-xl hover:bg-slate-200 font-semibold transition-all duration-200">
                               Cancel
                             </button>
                           </>
@@ -778,14 +975,14 @@ export default function HospitalDashboard() {
               <div className="space-y-3">
                 {inventory.map((item) => (
                   <div key={item.bloodGroup}
-                    className="flex items-center gap-4 p-3 rounded-xl border-2 border-gray-100 hover:border-gray-200 transition-colors">
+                    className="flex items-center gap-4 p-3 rounded-xl border-2 border-slate-100 hover:border-slate-200 transition-colors">
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0"
                       style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', fontFamily: 'Poppins, sans-serif' }}>
                       {item.bloodGroup}
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-[#1A1A2E]">{item.bloodGroup}</p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-slate-400">
                         {item.lastUpdated ? `Updated ${new Date(item.lastUpdated).toLocaleDateString()}` : 'Never updated'}
                       </p>
                     </div>
@@ -797,7 +994,7 @@ export default function HospitalDashboard() {
                         className="input-field w-24 text-center font-bold text-[#1A1A2E]"
                         style={{ padding: '8px' }}
                       />
-                      <span className="text-sm text-gray-500">units</span>
+                      <span className="text-sm text-slate-500">units</span>
                     </div>
                     <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
                       item.units === 0 ? 'bg-red-500' : item.units < 5 ? 'bg-orange-400' : 'bg-green-500'
@@ -807,14 +1004,14 @@ export default function HospitalDashboard() {
               </div>
             )}
 
-            <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <div className="flex gap-4 mt-4 pt-4 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <div className="w-3 h-3 rounded-full bg-red-500" /> Critical (0 units)
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <div className="w-3 h-3 rounded-full bg-orange-400" /> Low (&lt;5 units)
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <div className="w-3 h-3 rounded-full bg-green-500" /> OK (5+ units)
               </div>
             </div>
@@ -851,6 +1048,20 @@ export default function HospitalDashboard() {
                   onChange={(e) => setCampForm({ ...campForm, address: e.target.value })}
                   placeholder="Hall, Street, City" className="input-field" />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="input-label">City (for targeted alerts)</label>
+                  <input type="text" value={campForm.city}
+                    onChange={(e) => setCampForm({ ...campForm, city: e.target.value })}
+                    placeholder="e.g. Hyderabad" className="input-field" />
+                </div>
+                <div>
+                  <label className="input-label">Expected Donors</label>
+                  <input type="number" min={0} value={campForm.expectedDonors}
+                    onChange={(e) => setCampForm({ ...campForm, expectedDonors: e.target.value })}
+                    placeholder="e.g. 50" className="input-field" />
+                </div>
+              </div>
               <div>
                 <label className="input-label">Description (optional)</label>
                 <textarea value={campForm.description} rows={2} maxLength={1000}
@@ -865,7 +1076,7 @@ export default function HospitalDashboard() {
                       className={`px-3 py-1.5 rounded-xl text-sm font-bold border-2 transition-all duration-200 ${
                         campForm.targetBloodGroups.includes(bg)
                           ? 'bg-[#C0162C] border-[#C0162C] text-white'
-                          : 'bg-white border-gray-200 text-gray-600 hover:border-[#C0162C]'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-[#C0162C]'
                       }`}>
                       {bg}
                     </button>
@@ -891,7 +1102,7 @@ export default function HospitalDashboard() {
               <div className="card text-center py-14">
                 <div className="text-5xl mb-3">⛺</div>
                 <p className="font-semibold text-[#1A1A2E]">No Camps Yet</p>
-                <p className="text-sm text-gray-400 mt-1">Create your first blood donation camp</p>
+                <p className="text-sm text-slate-400 mt-1">Create your first blood donation camp</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -907,17 +1118,20 @@ export default function HospitalDashboard() {
                               {camp.status}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500">📅 {new Date(camp.date).toLocaleString()}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">📍 {camp.address}</p>
+                          <p className="text-xs text-slate-500">📅 {new Date(camp.date).toLocaleString()}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">📍 {camp.address}</p>
                           <div className="flex flex-wrap gap-1 mt-2">
                             {camp.targetBloodGroups?.map((bg) => (
                               <span key={bg} className="text-xs font-bold px-2 py-0.5 rounded-full"
-                                style={{ background: '#FFF0F0', color: '#C0162C', border: '1px solid #ffcdd2' }}>
+                                style={{ background: '#FFF5F5', color: '#C0162C', border: '1px solid #ffcdd2' }}>
                                 {bg}
                               </span>
                             ))}
                           </div>
-                          <p className="text-xs text-gray-400 mt-1">{camp.registrations?.length || 0} registered</p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            {camp.registrations?.length || 0} registered
+                            {camp.expectedDonors > 0 && ` / ${camp.expectedDonors} expected`}
+                          </p>
                         </div>
 
                         {camp.status === 'Upcoming' && (
@@ -929,7 +1143,7 @@ export default function HospitalDashboard() {
                             </button>
                             <button onClick={() => handleCampStatusUpdate(camp._id, 'Cancelled')}
                               disabled={updatingCampId === camp._id}
-                              className="text-xs px-3 py-1.5 bg-gray-50 border-2 border-gray-200 text-gray-600 rounded-xl font-semibold hover:bg-gray-100 transition-colors disabled:opacity-50">
+                              className="text-xs px-3 py-1.5 bg-slate-50 border-2 border-slate-200 text-slate-600 rounded-xl font-semibold hover:bg-slate-100 transition-colors disabled:opacity-50">
                               Cancel
                             </button>
                           </div>
@@ -987,13 +1201,13 @@ export default function HospitalDashboard() {
             <div className="flex gap-3 mb-4">
               <button type="button" onClick={handleGetDonorLocation} disabled={locating}
                 className={`flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all duration-200 border-2 ${
-                  donorLocation ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:border-[#C0162C] hover:text-[#C0162C]'
+                  donorLocation ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-[#C0162C] hover:text-[#C0162C]'
                 }`}>
                 {locating ? '⌛ Locating…' : donorLocation ? '📍 Location Set' : '📍 Use My Location'}
               </button>
               {donorLocation && (
                 <button type="button" onClick={() => setDonorLocation(null)}
-                  className="text-sm py-2.5 px-4 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 font-semibold border-2 border-gray-200 transition-all duration-200">
+                  className="text-sm py-2.5 px-4 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 font-semibold border-2 border-slate-200 transition-all duration-200">
                   Clear
                 </button>
               )}
@@ -1007,13 +1221,23 @@ export default function HospitalDashboard() {
 
             {/* Compatible types toggle */}
             <button type="button" onClick={() => setShowCompatible((v) => !v)}
-              className={`w-full mb-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all duration-200 flex items-center justify-center gap-2 ${
+              className={`w-full mb-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all duration-200 flex items-center justify-center gap-2 ${
                 showCompatible
                   ? 'bg-blue-50 border-blue-400 text-blue-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-blue-300'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-blue-300'
               }`}>
               {showCompatible ? '✓' : '+'} Include Compatible Blood Types
               {showCompatible && <span className="text-xs opacity-70">(also shows donors who can donate to {donorSearch.bloodGroup})</span>}
+            </button>
+
+            {/* Include unavailable toggle */}
+            <button type="button" onClick={() => setIncludeUnavailable((v) => !v)}
+              className={`w-full mb-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all duration-200 flex items-center justify-center gap-2 ${
+                includeUnavailable
+                  ? 'bg-amber-50 border-amber-400 text-amber-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-300'
+              }`}>
+              {includeUnavailable ? '✓' : '+'} Include Currently Unavailable Donors
             </button>
 
             <button type="submit" disabled={searchingDonors} className="btn-primary w-full py-3">
@@ -1034,17 +1258,32 @@ export default function HospitalDashboard() {
               <div className="card text-center py-16">
                 <div className="text-5xl mb-4">😔</div>
                 <h3 className="font-bold text-[#1A1A2E] mb-2">No Donors Found</h3>
-                <p className="text-gray-400 text-sm">
+                <p className="text-slate-400 text-sm">
                   {donorLocation ? `No available donors within ${donorRadius} km` : 'No available donors match this criteria'}
                 </p>
               </div>
             ) : (
               <div>
-                <p className="text-sm text-gray-500 mb-4 font-medium">
-                  {donors.length} donor(s) available
-                </p>
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <p className="text-sm text-slate-500 font-medium">
+                    {donors.length} donor(s) found
+                  </p>
+                  <select value={donorSort} onChange={(e) => setDonorSort(e.target.value)} className="input-field text-sm py-1.5 w-auto">
+                    <option value="default">Sort: Default</option>
+                    <option value="mostDonations">Sort: Most Donations</option>
+                    <option value="leastRecentDonation">Sort: Longest Since Donated</option>
+                  </select>
+                </div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {donors.map((donor) => (
+                  {donors.slice().sort((a, b) => {
+                    if (donorSort === 'mostDonations') return (b.totalDonations || 0) - (a.totalDonations || 0);
+                    if (donorSort === 'leastRecentDonation') {
+                      const at = a.lastDonationDate ? new Date(a.lastDonationDate).getTime() : 0;
+                      const bt = b.lastDonationDate ? new Date(b.lastDonationDate).getTime() : 0;
+                      return at - bt;
+                    }
+                    return 0;
+                  }).map((donor) => (
                     <div key={donor._id} className="card-hover flex items-start gap-4">
                       <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg flex-shrink-0"
                         style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', fontFamily: 'Poppins, sans-serif' }}>
@@ -1059,17 +1298,19 @@ export default function HospitalDashboard() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 truncate mt-0.5">{donor.address}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">📞 {donor.user?.phone || 'N/A'}</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">{donor.address}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">📞 {donor.user?.phone || 'N/A'}</p>
                         <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <span className="badge-normal">✅ Available</span>
+                          <span className={donor.isAvailable ? 'badge-normal' : 'badge-cancelled'}>
+                            {donor.isAvailable ? '✅ Available' : '🚫 Unavailable'}
+                          </span>
                           {showCompatible && donor.bloodGroup !== donorSearch.bloodGroup && (
                             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
                               ✓ Compatible
                             </span>
                           )}
                           {donor.totalDonations > 0 && (
-                            <span className="text-xs text-gray-400">{donor.totalDonations} donation{donor.totalDonations !== 1 ? 's' : ''}</span>
+                            <span className="text-xs text-slate-400">{donor.totalDonations} donation{donor.totalDonations !== 1 ? 's' : ''}</span>
                           )}
                         </div>
                       </div>
