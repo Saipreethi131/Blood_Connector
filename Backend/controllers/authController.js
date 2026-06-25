@@ -72,14 +72,6 @@ export const registerDonor = async (req, res) => {
     console.log('[Register] EMAIL_USER set:', !!process.env.EMAIL_USER)
     console.log('[Register] EMAIL_PASS set:', !!process.env.EMAIL_PASS)
 
-    try {
-      await sendOTPEmail(user.email, otp)
-      console.log('[OTP] Email sent successfully to:', user.email)
-    } catch (err) {
-      console.error('[OTP] Email send failed:', err.message)
-      console.error('[OTP] Full error:', err)
-    }
-
     const accessToken  = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
     user.refreshToken       = refreshToken;
@@ -101,6 +93,15 @@ export const registerDonor = async (req, res) => {
       },
       profile: donor
     });
+
+    // Send OTP email after responding — SMTP latency/failure must never block or time out registration
+    try {
+      await sendOTPEmail(user.email, otp)
+      console.log('[OTP] Email sent successfully to:', user.email)
+    } catch (err) {
+      console.error('[OTP] Email send failed:', err.message)
+      console.error('[OTP] Full error:', err)
+    }
   } catch (error) {
     console.error('Register Donor Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
@@ -268,6 +269,12 @@ export const resendOTP = async (req, res) => {
 
     const otp = await sendOTP(email);
 
+    res.status(200).json({
+      status: 'success',
+      message: 'A new verification code has been sent to your email.'
+    });
+
+    // Send OTP email after responding — SMTP latency/failure must never block resend
     try {
       await sendOTPEmail(user.email, otp)
       console.log('[OTP] Email sent successfully to:', user.email)
@@ -275,11 +282,6 @@ export const resendOTP = async (req, res) => {
       console.error('[OTP] Email send failed:', err.message)
       console.error('[OTP] Full error:', err)
     }
-
-    res.status(200).json({
-      status: 'success',
-      message: 'A new verification code has been sent to your email.'
-    });
   } catch (error) {
     console.error('Resend OTP Error:', error);
     res.status(500).json({ status: 'error', message: error.message });

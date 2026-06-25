@@ -7,11 +7,13 @@ const CLIENT = process.env.CLIENT_URL || 'http://localhost:5173';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  family: 4, // force IPv4 — Render blocks outbound IPv6 to Gmail SMTP (ENETUNREACH)
+  port: 465,
+  secure: true,
+  family: 4,
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  tls: { rejectUnauthorized: false },
+  connectionTimeout: 10000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
 });
 
 const canSend = () => !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
