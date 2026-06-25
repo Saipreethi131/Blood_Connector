@@ -7,6 +7,7 @@ const createTransporter = () =>
     host: 'smtp.gmail.com',
     port: 587,
     secure: false,
+    family: 4, // force IPv4 — Render blocks outbound IPv6 to Gmail SMTP (ENETUNREACH)
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     tls: { rejectUnauthorized: false },
   });

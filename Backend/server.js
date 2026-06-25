@@ -23,6 +23,7 @@ connectDB();
 startExpiryCron();
 
 const app = express();
+app.set('trust proxy', 1); // trust Render's first reverse proxy hop for accurate client IPs (rate limiter)
 const server = http.createServer(app);
 
 const isDev = process.env.NODE_ENV !== 'production';
