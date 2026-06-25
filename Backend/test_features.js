@@ -5,6 +5,7 @@
  * Run: node test_features.js
  */
 import jwt from 'jsonwebtoken';
+import http from 'http';
 import 'dotenv/config';
 
 import { canDonate, getCompatibleDonors, COMPATIBLE_DONORS } from './utils/bloodCompatibility.js';
@@ -52,6 +53,21 @@ async function httpDELETE(path, token = null) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const r = await fetch(`http://localhost:5000${path}`, { method: 'DELETE', headers });
   return { status: r.status, body: await parseBody(r), headers: r.headers };
+}
+// fetch() forbids setting the Origin header (per the Fetch spec) — use raw http
+// for CORS regression checks that need to control it.
+function httpGETWithOrigin(path, origin) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: 'localhost', port: 5000, path, method: 'GET', headers: { Origin: origin } },
+      (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers }));
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 // Forge a JWT for any ObjectId — verifies routing + middleware responses
@@ -571,16 +587,106 @@ async function testAllRoutesRegistered() {
     { method: 'GET',  path: '/api/hospital/donors?bloodGroup=A+&compatible=true', token: fakeHospToken },
     { method: 'PUT',  path: '/api/admin/users/507f1f77bcf86cd799439011/suspend',   token: fakeAdminToken },
     { method: 'PUT',  path: '/api/admin/users/507f1f77bcf86cd799439011/unsuspend', token: fakeAdminToken },
+    { method: 'POST', path: '/api/hospital/profile',                       token: fakeHospToken  },
+    { method: 'GET',  path: '/api/hospital/profile',                       token: fakeHospToken  },
   ];
 
   for (const { method, path, token } of routes) {
     let r;
     if (method === 'GET')  r = await httpGET(path, token);
     if (method === 'PUT')  r = await httpPUT(path, {}, token);
+    if (method === 'POST') r = await httpPOST(path, {}, token);
 
     const notFound = r.status === 404 && r.body?.message?.toLowerCase().includes('not found');
     assert(r.status !== 404 || !notFound,
       `${method} ${path.split('?')[0]} → ${r.status} (route registered, not 404)`);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Regression — bugs found and fixed during the donor/hospital/admin
+// forensic pass (this session). Each assertion here guards one specific
+// fix from silently regressing.
+// ══════════════════════════════════════════════════════════════════════════
+async function testForensicPassRegressions() {
+  head('Regression — Donor/Hospital/Admin forensic-pass fixes');
+
+  // 1. CORS: a single hardcoded prod origin used to make every local-dev
+  //    request fail silently in the browser. Must now echo back any
+  //    localhost dev origin instead of a fixed mismatched one.
+  const localOrigin = 'http://localhost:5173';
+  const corsRes = await httpGETWithOrigin('/api/health', localOrigin);
+  assert(corsRes.headers['access-control-allow-origin'] === localOrigin,
+    `CORS reflects local dev origin (got: ${corsRes.headers['access-control-allow-origin']})`);
+
+  // 2. Hospital profile now has a real edit endpoint wired up (previously
+  //    there was no frontend path to it at all, and GET 404'd on a missing
+  //    profile instead of degrading gracefully).
+  const hospGet = await httpGET('/api/hospital/profile', fakeHospToken);
+  assert(hospGet.status !== 404, `GET /api/hospital/profile no longer 404s on missing profile (got ${hospGet.status})`);
+  const hospPost = await httpPOST('/api/hospital/profile', { address: 'Test' }, fakeHospToken);
+  assert(hospPost.status !== 404, `POST /api/hospital/profile is registered (got ${hospPost.status})`);
+
+  // 3. Donor profile update no longer requires coordinates the UI never
+  //    collected — checked statically against the Donor schema source
+  //    (no DB access in this sandbox to exercise a live upsert).
+  const fs = await import('fs');
+  const donorModelSrc = fs.readFileSync('./models/Donor.js', 'utf-8');
+  assert(!donorModelSrc.includes("required: [true, 'Coordinates are required']"),
+    'Donor.location.coordinates is no longer a required field');
+
+  // 4. Public shareable request links (`getRequestById`) used to populate a
+  //    non-existent `responses.donor` path (real field is `donorId`), which
+  //    throws StrictPopulateError on every single request — verified by
+  //    static source check since this sandbox has no DB access to exercise
+  //    the live query end-to-end.
+  const requestControllerSrc = fs.readFileSync('./controllers/requestController.js', 'utf-8');
+  assert(!requestControllerSrc.includes("responses.donor'") && !requestControllerSrc.includes('responses.donor"'),
+    'getRequestById no longer populates the non-existent `responses.donor` path');
+
+  // 5. The one confirmed incident: postBloodRequest used to set
+  //    `recipient: d.user` straight off a *populated* Donor doc (an object,
+  //    not an id), which fails Notification's required ObjectId validation.
+  //    Other controllers (e.g. campController) legitimately use `d.user`
+  //    as-is because they never populate it — only this exact call site
+  //    is checked.
+  const hospitalControllerSrc = fs.readFileSync('./controllers/hospitalController.js', 'utf-8');
+  assert(hospitalControllerSrc.includes('recipient: d.user._id'),
+    'postBloodRequest notification uses d.user._id (the User id), not the populated user object');
+  assert(!hospitalControllerSrc.includes('recipient: d.user,'),
+    'postBloodRequest notification no longer passes the populated user object as recipient');
+
+  // 6. Single-notification mark-as-read used to update the Notifications
+  //    page's own local count but never told the navbar bell badge (a
+  //    separate piece of state in SocketContext) to refresh.
+  const notifPageSrc = fs.readFileSync('../Frontend/src/pages/NotificationsPage.jsx', 'utf-8');
+  const markReadFn = notifPageSrc.slice(notifPageSrc.indexOf('const markRead ='), notifPageSrc.indexOf('const markAllRead ='));
+  assert(markReadFn.includes('refreshUnreadCount()'),
+    'markRead() refreshes the navbar unread count, not just the local page count');
+
+  // 7. Hospital rating a donor used to require a response with status
+  //    "Accepted" even though a request can be marked Fulfilled without
+  //    ever explicitly accepting a response — now derives the target
+  //    donor from `fulfilledBy`, the authoritative field set on fulfillment.
+  const ratingControllerSrc = fs.readFileSync('./controllers/ratingController.js', 'utf-8');
+  assert(ratingControllerSrc.includes('request.fulfilledBy?.donorId') || ratingControllerSrc.includes('request.fulfilledBy.donorId'),
+    'submitRating derives the rated donor from fulfilledBy, not a re-scan for "Accepted" responses');
+
+  // 8. A donor response used to only notify the hospital via in-app
+  //    notification/socket/email — no push, even though push is sent for
+  //    new critical/urgent requests in the other direction.
+  const pushControllerSrc = fs.readFileSync('./controllers/pushController.js', 'utf-8');
+  assert(pushControllerSrc.includes('export const sendPushToUser'),
+    'pushController exports sendPushToUser for single-recipient pushes');
+  const donorControllerSrc = fs.readFileSync('./controllers/donorController.js', 'utf-8');
+  assert(donorControllerSrc.includes('sendPushToUser(request.hospital'),
+    'respondToRequest sends a push notification to the hospital, not just in-app/email');
+
+  // 9. Admin deleting a user used to leave orphaned Donations, Ratings,
+  //    BloodInventory, BloodCamp, and PushSubscription records behind.
+  const adminControllerSrc = fs.readFileSync('./controllers/adminController.js', 'utf-8');
+  for (const model of ['Donation.deleteMany', 'Rating.deleteMany', 'BloodInventory.deleteMany', 'BloodCamp.deleteMany', 'PushSubscription.deleteMany']) {
+    assert(adminControllerSrc.includes(model), `deleteUser cascades to ${model}`);
   }
 }
 
@@ -608,6 +714,7 @@ await testInventoryRoutes();
 await testCampRoutes();
 await testPushRoutes();
 await testAllRoutesRegistered();
+await testForensicPassRegressions();
 
 head('Results');
 const color = failed === 0 ? 32 : 31;
