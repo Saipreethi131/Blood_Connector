@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getStats,
+  getAnalytics,
   getPendingHospitals,
   getAllHospitals,
   approveHospital,
@@ -10,6 +11,8 @@ import {
   suspendUser,
   unsuspendUser,
   getAdminRequests,
+  getBloodStock,
+  updateBloodStock,
   seedAdmin
 } from '../controllers/adminController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -23,6 +26,7 @@ router.post('/seed', seedAdmin);
 router.use(protect, authorize('admin'));
 
 router.get('/stats', getStats);
+router.get('/analytics', getAnalytics);
 router.get('/hospitals/pending', getPendingHospitals);
 router.get('/hospitals', getAllHospitals);
 router.put('/hospitals/:userId/approve', approveHospital);
@@ -32,5 +36,6 @@ router.delete('/users/:id', deleteUser);
 router.put('/users/:id/suspend', suspendUser);
 router.put('/users/:id/unsuspend', unsuspendUser);
 router.get('/requests', getAdminRequests);
+router.route('/blood-stock').get(getBloodStock).put(updateBloodStock);
 
 export default router;
