@@ -67,16 +67,10 @@ export const registerDonor = async (req, res) => {
       eligibilityStatus: true
     });
 
-    // Generate OTP and send via email
+    // Generate the OTP (fast DB write) — the actual email send happens after
+    // the response below, so a slow/blocked SMTP connection can never delay
+    // or time out an otherwise-successful registration.
     const otp = await sendOTP(email);
-    try {
-      await sendOTPEmail(user.email, otp);
-      console.log('[Email] OTP sent successfully to:', user.email);
-    } catch (err) {
-      console.error('[Email] Failed to send OTP:', err.message);
-      // still return success to the user — the OTP is saved in the DB and
-      // they can use Resend Code if the email never arrives
-    }
 
     const accessToken  = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
@@ -99,6 +93,12 @@ export const registerDonor = async (req, res) => {
       },
       profile: donor
     });
+
+    // Fire the email after responding — not awaited, so a slow or failed
+    // SMTP send can't delay or time out the registration response itself.
+    sendOTPEmail(user.email, otp)
+      .then(() => console.log('[Email] OTP sent successfully to:', user.email))
+      .catch((err) => console.error('[Email] Failed to send OTP:', err.message));
   } catch (error) {
     console.error('Register Donor Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
@@ -265,18 +265,17 @@ export const resendOTP = async (req, res) => {
     }
 
     const otp = await sendOTP(email);
-    try {
-      await sendOTPEmail(user.email, otp);
-      console.log('[Email] OTP sent successfully to:', user.email);
-    } catch (err) {
-      console.error('[Email] Failed to send OTP:', err.message);
-      // still return success — the OTP is saved in the DB regardless
-    }
 
     res.status(200).json({
       status: 'success',
       message: 'A new verification code has been sent to your email.'
     });
+
+    // Fire the email after responding — not awaited, so a slow or failed
+    // SMTP send can't delay or time out the resend response itself.
+    sendOTPEmail(user.email, otp)
+      .then(() => console.log('[Email] OTP sent successfully to:', user.email))
+      .catch((err) => console.error('[Email] Failed to send OTP:', err.message));
   } catch (error) {
     console.error('Resend OTP Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
