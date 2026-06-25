@@ -59,7 +59,7 @@ export default function Login() {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12 bg-[#FAFAFA]">
+      <div className="flex-1 flex items-center justify-center px-6 py-12 bg-[#F8FAFC]">
         <div className="w-full max-w-md animate-fade-in-up">
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-8">
@@ -78,7 +78,7 @@ export default function Login() {
             <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
               Sign In
             </h1>
-            <p className="text-gray-500 mt-1 text-sm">Don't have an account?{' '}
+            <p className="text-slate-500 mt-1 text-sm">Don't have an account?{' '}
               <Link to="/register" className="text-[#C0162C] font-semibold hover:underline">Register free</Link>
             </p>
           </div>
@@ -97,7 +97,7 @@ export default function Login() {
                   value={form.password} onChange={handleChange}
                   placeholder="••••••••" className="input-field pr-12" autoComplete="current-password" />
                 <button type="button" onClick={() => setShowPw(!showPw)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#C0162C] transition-colors text-sm">
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#C0162C] transition-colors text-sm">
                   {showPw ? '🙈' : '👁️'}
                 </button>
               </div>

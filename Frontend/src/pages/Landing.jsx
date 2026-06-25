@@ -1,24 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { STORIES, StoryCard, StoryModal } from './Stories.jsx';
+import { BLOGS, BlogCard, BlogModal } from './Blogs.jsx';
 
 const stats = [
-  { label: 'Registered Donors', value: 12400, suffix: '+' },
-  { label: 'Hospitals Connected', value: 380, suffix: '+' },
-  { label: 'Lives Saved', value: 5200, suffix: '+' },
+  { label: 'Total Donors', value: 12400, suffix: '+' },
   { label: 'Requests Fulfilled', value: 8900, suffix: '+' },
-];
-
-const steps = [
-  { icon: '📝', step: '01', title: 'Register', desc: 'Sign up as a Donor or a Hospital in under 2 minutes. No paperwork needed.' },
-  { icon: '🔍', step: '02', title: 'Match', desc: 'Hospitals post blood requests. Donors see nearby matches sorted by distance.' },
-  { icon: '❤️', step: '03', title: 'Save a Life', desc: 'Donors respond in real time. One donation can save up to 3 lives.' },
-];
-
-const testimonials = [
-  { name: 'Dr. Priya Sharma', role: 'Apollo Hospital, Hyderabad', text: 'Blood Connector helped us find 3 O- donors within 20 minutes during an emergency. Truly life-saving.' },
-  { name: 'Rahul Menon', role: 'Blood Donor, Bangalore', text: 'I\'ve donated 8 times through this platform. The process is seamless and the impact is real.' },
-  { name: 'KIMS Hospital', role: 'Secunderabad', text: 'The critical alert system ensures the right donors are notified instantly. Our fulfillment rate is up 60%.' },
+  { label: 'Cities', value: 10, suffix: '' },
+  { label: 'Lives Saved', value: 5200, suffix: '+' },
 ];
 
 function AnimatedCounter({ target, suffix = '', duration = 1800 }) {
@@ -30,14 +20,14 @@ function AnimatedCounter({ target, suffix = '', duration = 1800 }) {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !started.current) {
         started.current = true;
-        const steps = 60;
-        const increment = target / steps;
+        const totalSteps = 60;
+        const increment = target / totalSteps;
         let current = 0;
         const timer = setInterval(() => {
           current += increment;
           if (current >= target) { setCount(target); clearInterval(timer); }
           else setCount(Math.floor(current));
-        }, duration / steps);
+        }, duration / totalSteps);
       }
     }, { threshold: 0.3 });
     if (ref.current) observer.observe(ref.current);
@@ -51,213 +41,171 @@ function AnimatedCounter({ target, suffix = '', duration = 1800 }) {
   );
 }
 
+function DonationIllustration() {
+  return (
+    <svg viewBox="0 0 360 360" className="w-full max-w-md mx-auto" aria-hidden="true">
+      <circle cx="180" cy="180" r="160" fill="#FFF5F5" />
+      <circle cx="80" cy="90" r="14" fill="#FFD7DB" />
+      <circle cx="300" cy="270" r="20" fill="#FFD7DB" />
+      <circle cx="300" cy="80" r="9" fill="#C0162C" opacity="0.25" />
+      <path d="M180 70 C 140 130, 105 175, 105 215 a75 75 0 0 0 150 0 C 255 175, 220 130, 180 70 Z"
+        fill="#C0162C" />
+      <path d="M180 70 C 160 100, 142 128, 134 155 a 46 46 0 0 0 18 18 C 144 145, 158 118, 180 95 Z"
+        fill="#FF6B6B" opacity="0.55" />
+      <circle cx="180" cy="225" r="10" fill="#FFF5F5" opacity="0.85" />
+      <g opacity="0.7">
+        <path d="M236 250 C 224 268, 209 280, 209 292 a18 18 0 0 0 36 0 C 245 280, 248 268, 236 250 Z" fill="#8B0000" />
+      </g>
+      <g opacity="0.5">
+        <path d="M120 260 C 112 272, 102 280, 102 289 a13 13 0 0 0 26 0 C 128 280, 128 272, 120 260 Z" fill="#FFD700" />
+      </g>
+    </svg>
+  );
+}
+
 export default function Landing() {
   const { user } = useAuth();
   const dashboardPath = user?.role === 'donor' ? '/donor/dashboard' : '/hospital/dashboard';
+  const [activeStory, setActiveStory] = useState(null);
+  const [activeBlog, setActiveBlog] = useState(null);
+  const campCta = user
+    ? (user.role === 'donor' ? '/donor/dashboard' : user.role === 'hospital' ? '/hospital/dashboard' : '/admin/dashboard')
+    : '/register?role=donor';
 
   return (
-    <div className="bg-cream overflow-x-hidden">
+    <div className="bg-white overflow-x-hidden">
       {/* ─── Hero ────────────────────────────────────────────────────────── */}
-      <section className="hero-gradient min-h-[92vh] flex items-center justify-center px-4 py-20 relative overflow-hidden">
-        {/* Decorative blobs */}
-        <div className="absolute top-20 left-10 w-72 h-72 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)' }} />
-        <div className="absolute bottom-20 right-10 w-96 h-96 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #FFD700 0%, transparent 70%)' }} />
+      <section className="px-4 py-20 lg:py-28">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
+          <div style={{ animation: 'fadeInUp 0.6s ease-out' }}>
+            <div className="inline-flex items-center gap-2 bg-[#FFF5F5] text-[#C0162C] text-sm font-semibold px-4 py-2 rounded-full mb-6">
+              <span className="w-2 h-2 rounded-full bg-[#C0162C] animate-pulse" />
+              Real-time blood matching platform
+            </div>
+            <h1 className="text-[#1A1A2E] font-bold leading-tight mb-5"
+              style={{ fontSize: 'clamp(2.2rem, 5vw, 3.4rem)', fontFamily: 'Poppins, sans-serif' }}>
+              Every Drop Counts.<br />
+              <span className="text-[#C0162C]">Connect. Donate. Save Lives.</span>
+            </h1>
+            <p className="text-slate-500 text-lg mb-8 max-w-lg leading-relaxed">
+              Blood Connector bridges the gap between willing donors and hospitals in urgent need —
+              real-time matching, instant notifications, and a community dedicated to saving lives.
+            </p>
 
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white/90 text-sm font-medium px-4 py-2 rounded-full mb-8 backdrop-blur-sm"
-            style={{ animation: 'fadeIn 0.6s ease-out' }}>
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            Real-time blood matching platform
+            {user ? (
+              <Link to={dashboardPath} className="btn-primary px-8 py-3.5 text-base">
+                Go to Dashboard →
+              </Link>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Link to="/register?role=donor" className="btn-primary px-8 py-3.5 text-base">
+                  🤝 Register as Donor
+                </Link>
+                <Link to="/register?role=hospital" className="btn-secondary px-8 py-3.5 text-base">
+                  🏥 Register as Hospital
+                </Link>
+              </div>
+            )}
           </div>
 
-          {/* Headline */}
-          <h1 className="text-white font-bold leading-tight mb-6"
-            style={{ fontSize: 'clamp(2.4rem, 6vw, 4rem)', fontFamily: 'Poppins, sans-serif', animation: 'fadeInUp 0.7s ease-out' }}>
-            Every Drop Counts.<br />
-            <span style={{ color: '#FFD700' }}>Connect. Donate. Save Lives.</span>
-          </h1>
-
-          <p className="text-white/75 text-lg mb-10 max-w-2xl mx-auto leading-relaxed"
-            style={{ animation: 'fadeInUp 0.8s ease-out' }}>
-            Blood Connector bridges the gap between willing donors and hospitals in urgent need.
-            Real-time matching, instant notifications, and a community dedicated to saving lives.
-          </p>
-
-          {user ? (
-            <Link to={dashboardPath}
-              className="inline-flex items-center gap-2 bg-white text-[#C0162C] font-bold px-10 py-4 rounded-2xl text-lg shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-200"
-              style={{ animation: 'fadeInUp 0.9s ease-out' }}>
-              Go to Dashboard →
-            </Link>
-          ) : (
-            <div className="flex flex-col sm:flex-row gap-4 justify-center"
-              style={{ animation: 'fadeInUp 0.9s ease-out' }}>
-              <Link to="/register?role=donor"
-                className="inline-flex items-center justify-center gap-2 bg-white text-[#C0162C] font-bold px-8 py-4 rounded-2xl text-base shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-200">
-                🤝 Register as Donor
-              </Link>
-              <Link to="/register?role=hospital"
-                className="inline-flex items-center justify-center gap-2 bg-transparent border-2 border-white/60 text-white font-bold px-8 py-4 rounded-2xl text-base hover:bg-white/10 hover:-translate-y-1 transition-all duration-200">
-                🏥 Register Hospital
-              </Link>
-            </div>
-          )}
-
-          {/* Scroll indicator */}
-          <div className="mt-16 flex flex-col items-center gap-2 text-white/40 text-xs"
-            style={{ animation: 'fadeIn 1.2s ease-out' }}>
-            <span>Scroll to explore</span>
-            <div className="w-5 h-8 rounded-full border-2 border-white/30 flex items-start justify-center p-1">
-              <div className="w-1 h-2 rounded-full bg-white/60 animate-bounce" />
-            </div>
+          <div className="hidden lg:block" style={{ animation: 'fadeIn 0.8s ease-out' }}>
+            <DonationIllustration />
           </div>
         </div>
       </section>
 
       {/* ─── Stats ────────────────────────────────────────────────────────── */}
-      <section className="py-16 px-4 bg-white border-b border-gray-100">
+      <section className="py-14 px-4 bg-[#FFF5F5]">
         <div className="max-w-5xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-8 text-center">
           {stats.map((s) => (
             <div key={s.label} className="space-y-1">
               <p className="text-4xl font-bold text-[#C0162C]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                 <AnimatedCounter target={s.value} suffix={s.suffix} />
               </p>
-              <p className="text-gray-500 text-sm font-medium">{s.label}</p>
+              <p className="text-slate-500 text-sm font-medium">{s.label}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ─── How it Works ────────────────────────────────────────────────── */}
-      <section className="py-20 px-4 bg-[#FAFAFA]">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <span className="inline-block text-[#C0162C] text-sm font-bold tracking-widest uppercase mb-3">Simple Process</span>
-            <h2 className="text-4xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
-              How It Works
-            </h2>
-            <p className="text-gray-500 mt-3 max-w-lg mx-auto">Three simple steps between a request and a life saved</p>
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-8 relative">
-            {/* Connector line */}
-            <div className="hidden sm:block absolute top-8 left-[calc(16.7%+12px)] right-[calc(16.7%+12px)] h-0.5 bg-gradient-to-r from-[#C0162C]/30 via-[#C0162C] to-[#C0162C]/30" />
-
-            {steps.map((s, i) => (
-              <div key={i} className="card-hover text-center relative z-10 group">
-                <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl
-                  bg-gradient-to-br from-red-50 to-[#FFF0F0] border-2 border-[#C0162C]/20
-                  group-hover:scale-110 transition-transform duration-200">
-                  {s.icon}
-                </div>
-                <span className="inline-block text-xs font-bold text-[#C0162C]/60 tracking-widest mb-2">
-                  STEP {s.step}
-                </span>
-                <h3 className="text-lg font-bold text-[#1A1A2E] mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
-                  {s.title}
-                </h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Blood Groups ────────────────────────────────────────────────── */}
-      <section className="py-16 px-4 bg-white">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-2xl font-bold text-[#1A1A2E] mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
-            All Blood Groups Welcome
-          </h2>
-          <p className="text-gray-500 mb-10 text-sm">Every type matters. Every donor counts.</p>
-          <div className="flex flex-wrap justify-center gap-4">
-            {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg, i) => (
-              <div key={bg} className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white text-lg
-                shadow-lg hover:scale-110 hover:-translate-y-1 transition-all duration-200 cursor-default"
-                style={{
-                  background: 'linear-gradient(135deg, #C0162C, #8B0000)',
-                  animationDelay: `${i * 0.05}s`,
-                  boxShadow: '0 6px 20px rgba(192,22,44,0.3)',
-                }}>
-                {bg}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Testimonials ────────────────────────────────────────────────── */}
-      <section className="py-20 px-4" style={{ background: 'linear-gradient(135deg, #1A1A2E 0%, #2d1b4e 100%)' }}>
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <span className="text-[#FFD700] text-sm font-bold tracking-widest uppercase">Stories</span>
-            <h2 className="text-3xl font-bold text-white mt-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
-              Lives Changed
-            </h2>
+      {/* ─── Recent Stories ─────────────────────────────────────────────── */}
+      <section className="py-20 px-4 bg-[#F8FAFC]">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-end justify-between mb-10 flex-wrap gap-3">
+            <div>
+              <span className="inline-block text-[#C0162C] text-sm font-bold tracking-widest uppercase mb-2">Community Stories</span>
+              <h2 className="text-3xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                Lives Changed by Donors Like You
+              </h2>
+            </div>
+            <Link to="/stories" className="text-sm font-semibold text-[#C0162C] hover:underline flex-shrink-0">
+              View All Stories →
+            </Link>
           </div>
           <div className="grid sm:grid-cols-3 gap-6">
-            {testimonials.map((t, i) => (
-              <div key={i} className="card-glass p-6 rounded-2xl"
-                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
-                <div className="text-[#FFD700] text-2xl mb-4">"</div>
-                <p className="text-white/80 text-sm leading-relaxed mb-4">"{t.text}"</p>
-                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-white/10">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm"
-                    style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)' }}>
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <p className="text-white font-semibold text-sm">{t.name}</p>
-                    <p className="text-white/50 text-xs">{t.role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+            {STORIES.slice(0, 3).map((s) => <StoryCard key={s.id} story={s} onRead={setActiveStory} />)}
           </div>
         </div>
       </section>
 
-      {/* ─── CTA ─────────────────────────────────────────────────────────── */}
-      {!user && (
-        <section className="py-20 px-4 bg-[#FFF0F0]">
-          <div className="max-w-2xl mx-auto text-center">
-            <div className="text-5xl mb-6">🩸</div>
-            <h2 className="text-3xl font-bold text-[#1A1A2E] mb-3" style={{ fontFamily: 'Poppins, sans-serif' }}>
-              Ready to Make a Difference?
-            </h2>
-            <p className="text-gray-500 mb-8 max-w-xl mx-auto leading-relaxed">
-              Join thousands of donors and hospitals already saving lives through Blood Connector.
-              Register free — it takes under 2 minutes.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/register?role=donor" className="btn-primary px-8 py-3 text-base">
-                Become a Donor
-              </Link>
-              <Link to="/register?role=hospital" className="btn-secondary px-8 py-3 text-base">
-                Register Hospital
-              </Link>
+      {/* ─── Recent Blogs ────────────────────────────────────────────────── */}
+      <section className="py-20 px-4 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-end justify-between mb-10 flex-wrap gap-3">
+            <div>
+              <span className="inline-block text-[#C0162C] text-sm font-bold tracking-widest uppercase mb-2">From the Blog</span>
+              <h2 className="text-3xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                Insights &amp; Updates
+              </h2>
             </div>
+            <Link to="/blogs" className="text-sm font-semibold text-[#C0162C] hover:underline flex-shrink-0">
+              View All Blogs →
+            </Link>
           </div>
-        </section>
-      )}
+          <div className="grid sm:grid-cols-3 gap-6">
+            {BLOGS.slice(0, 3).map((b) => <BlogCard key={b.id} blog={b} onRead={setActiveBlog} />)}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Blood Camp announcement ────────────────────────────────────── */}
+      <section className="py-16 px-4 bg-[#FFF5F5]">
+        <div className="max-w-3xl mx-auto card text-center py-12 px-8">
+          <div className="text-5xl mb-4">📍</div>
+          <h2 className="text-2xl font-bold text-[#1A1A2E] mb-3" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            Blood Camps Happening Near You
+          </h2>
+          <p className="text-slate-500 mb-7 max-w-lg mx-auto leading-relaxed">
+            Hospitals across the city schedule donation camps every week. Find one nearby and donate
+            without waiting for an emergency.
+          </p>
+          <Link to={campCta} className="btn-primary px-8 py-3 text-base">
+            Find a Camp Near You →
+          </Link>
+        </div>
+      </section>
 
       {/* ─── Footer ──────────────────────────────────────────────────────── */}
-      <footer className="py-10 px-4 bg-[#1A1A2E] text-white/60">
+      <footer className="py-10 px-4 bg-white border-t border-slate-100">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🩸</span>
-            <span className="font-bold text-white" style={{ fontFamily: 'Poppins, sans-serif' }}>Blood Connector</span>
+            <span className="font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              Blood <span className="text-[#C0162C]">Connector</span>
+            </span>
           </div>
-          <p className="text-sm text-center">© 2024 Blood Connector. Built to save lives. Every drop counts.</p>
-          <div className="flex gap-6 text-sm">
-            <Link to="/login" className="hover:text-white transition-colors">Login</Link>
-            <Link to="/register" className="hover:text-white transition-colors">Register</Link>
+          <p className="text-sm text-slate-400 text-center">© 2024 Blood Connector. Built to save lives. Every drop counts.</p>
+          <div className="flex gap-6 text-sm text-slate-500">
+            <Link to="/" className="hover:text-[#C0162C] transition-colors">Home</Link>
+            <Link to="/stories" className="hover:text-[#C0162C] transition-colors">Stories</Link>
+            <Link to="/blogs" className="hover:text-[#C0162C] transition-colors">Blogs</Link>
+            <Link to="/leaderboard" className="hover:text-[#C0162C] transition-colors">Leaderboard</Link>
           </div>
         </div>
       </footer>
+
+      {activeStory && <StoryModal story={activeStory} onClose={() => setActiveStory(null)} />}
+      {activeBlog && <BlogModal blog={activeBlog} onClose={() => setActiveBlog(null)} />}
     </div>
   );
 }

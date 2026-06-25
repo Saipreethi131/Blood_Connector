@@ -4,11 +4,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        crimson:  { DEFAULT: '#C0162C', dark: '#8B0000', light: '#FFF0F0' },
+        crimson:  { DEFAULT: '#C0162C', dark: '#8B0000', light: '#FFF5F5' },
         charcoal: { DEFAULT: '#1A1A2E', 700: '#2d2d4a' },
         gold:     { DEFAULT: '#FFD700', dark: '#B8960C' },
-        blush:    '#FFF0F0',
-        cream:    '#FAFAFA',
+        blush:    '#FFF5F5',
+        cream:    '#F8FAFC',
+        success:  '#16A34A',
+        warning:  '#D97706',
       },
       fontFamily: {
         sans:    ['Inter', 'sans-serif'],

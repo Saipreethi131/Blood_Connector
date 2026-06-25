@@ -48,7 +48,7 @@ export default function PublicRequestPage() {
         <div className="card text-center max-w-md w-full py-16">
           <div className="text-6xl mb-4">😔</div>
           <h2 className="text-xl font-bold text-[#1A1A2E] mb-2">Request Not Found</h2>
-          <p className="text-gray-500 mb-6">{error || 'This request may have been fulfilled or removed.'}</p>
+          <p className="text-slate-500 mb-6">{error || 'This request may have been fulfilled or removed.'}</p>
           <Link to="/" className="btn-primary">Back to Home</Link>
         </div>
       </div>
@@ -67,53 +67,53 @@ export default function PublicRequestPage() {
         <h1 className="text-3xl font-bold text-[#1A1A2E] mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
           Urgent Help Needed
         </h1>
-        <p className="text-gray-500">Share this link — every response matters</p>
+        <p className="text-slate-500">Share this link — every response matters</p>
       </div>
 
       {/* Request card */}
       <div className={cfg.cardCls}>
         {/* Hospital header */}
         <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center text-2xl shadow-sm border border-gray-100 flex-shrink-0">
+          <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center text-2xl shadow-sm border border-slate-100 flex-shrink-0">
             🏥
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-bold text-[#1A1A2E]">{request.hospitalName}</h2>
-            <p className="text-gray-500 text-sm">{request.address}</p>
+            <p className="text-slate-500 text-sm">{request.address}</p>
           </div>
           <span className={cfg.cls}>{cfg.icon} {request.urgency}</span>
         </div>
 
         {/* Blood info */}
         <div className="grid grid-cols-3 gap-3 mt-2">
-          <div className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="bg-white rounded-xl p-3 text-center border border-slate-100">
             <p className="text-2xl font-bold text-[#C0162C]" style={{ fontFamily: 'Poppins, sans-serif' }}>
               {request.bloodGroup}
             </p>
-            <p className="text-xs text-gray-500 mt-0.5">Blood Type</p>
+            <p className="text-xs text-slate-500 mt-0.5">Blood Type</p>
           </div>
-          <div className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="bg-white rounded-xl p-3 text-center border border-slate-100">
             <p className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
               {request.unitsRequired}
             </p>
-            <p className="text-xs text-gray-500 mt-0.5">Units Needed</p>
+            <p className="text-xs text-slate-500 mt-0.5">Units Needed</p>
           </div>
-          <div className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="bg-white rounded-xl p-3 text-center border border-slate-100">
             <p className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
               {request.responses?.length ?? 0}
             </p>
-            <p className="text-xs text-gray-500 mt-0.5">Responded</p>
+            <p className="text-xs text-slate-500 mt-0.5">Responded</p>
           </div>
         </div>
 
         {request.notes && (
           <div className="bg-white rounded-xl p-4 border-l-4 border-[#C0162C]">
-            <p className="text-sm text-gray-600">{request.notes}</p>
+            <p className="text-sm text-slate-600">{request.notes}</p>
           </div>
         )}
 
         {/* Status */}
-        <div className="flex items-center justify-between text-xs text-gray-400">
+        <div className="flex items-center justify-between text-xs text-slate-400">
           <span>Posted {new Date(request.createdAt).toLocaleString()}</span>
           <span className={request.status === 'Pending' ? 'badge-pending' : 'badge-fulfilled'}>
             {request.status}
@@ -141,7 +141,7 @@ export default function PublicRequestPage() {
           {copied ? '✅ Link Copied!' : '🔗 Copy Shareable Link'}
         </button>
 
-        <Link to="/" className="block text-center text-sm text-gray-400 hover:text-[#C0162C] transition-colors">
+        <Link to="/" className="block text-center text-sm text-slate-400 hover:text-[#C0162C] transition-colors">
           ← Back to Blood Connector
         </Link>
       </div>
