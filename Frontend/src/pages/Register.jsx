@@ -61,7 +61,7 @@ export default function Register() {
       const endpoint = role === 'donor' ? '/auth/register/donor' : '/auth/register/hospital';
       await api.post(endpoint, payload);
       if (role === 'donor') {
-        sessionStorage.setItem('otp_phone', form.phone);
+        sessionStorage.setItem('otp_email', form.email);
         toast.success('Registered! A verification code has been sent to your email.');
         navigate('/verify-otp');
       } else {
@@ -76,7 +76,7 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-xl animate-fade-in-up">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -92,18 +92,18 @@ export default function Register() {
           <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
             Create Account
           </h1>
-          <p className="text-gray-500 text-sm mt-1">Join the community saving lives every day</p>
+          <p className="text-slate-500 text-sm mt-1">Join the community saving lives every day</p>
         </div>
 
         <div className="card">
           {/* Role selector */}
-          <div className="flex rounded-xl overflow-hidden border-2 border-gray-200 mb-6">
+          <div className="flex rounded-xl overflow-hidden border-2 border-slate-200 mb-6">
             {['donor', 'hospital'].map((r) => (
               <button key={r} type="button" onClick={() => setRole(r)}
                 className={`flex-1 py-3 font-semibold text-sm transition-all duration-200 ${
                   role === r
                     ? 'text-white shadow-sm'
-                    : 'text-gray-500 hover:text-[#C0162C]'
+                    : 'text-slate-500 hover:text-[#C0162C]'
                 }`}
                 style={role === r ? { background: 'linear-gradient(135deg, #C0162C, #8B0000)' } : {}}>
                 {r === 'donor' ? '🤝 Donor' : '🏥 Hospital'}
@@ -134,7 +134,7 @@ export default function Register() {
                   value={form.password} onChange={handleChange}
                   placeholder="Min. 6 characters" className="input-field pr-12" />
                 <button type="button" onClick={() => setShowPw(!showPw)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#C0162C] transition-colors text-sm">
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#C0162C] transition-colors text-sm">
                   {showPw ? '🙈' : '👁️'}
                 </button>
               </div>
@@ -202,7 +202,7 @@ export default function Register() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-slate-500 mt-6">
             Already have an account?{' '}
             <Link to="/login" className="text-[#C0162C] font-semibold hover:underline">Sign in</Link>
           </p>

@@ -5,7 +5,7 @@ import api from '../api/axios.js';
 
 export default function VerifyOTP() {
   const navigate = useNavigate();
-  const [phone, setPhone] = useState(sessionStorage.getItem('otp_phone') || '');
+  const [email] = useState(sessionStorage.getItem('otp_email') || '');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -15,26 +15,25 @@ export default function VerifyOTP() {
     if (otp.length !== 6) { toast.error('Please enter the 6-digit OTP'); return; }
     setLoading(true);
     try {
-      await api.post('/auth/verify-otp', { phone, otp });
-      sessionStorage.removeItem('otp_phone');
-      toast.success('Phone verified! You can now log in.');
+      await api.post('/auth/verify-otp', { email, otp });
+      sessionStorage.removeItem('otp_email');
+      toast.success('Email verified! You can now log in.');
       navigate('/login');
     } catch (err) { toast.error(err.response?.data?.message || 'Invalid or expired OTP'); }
     finally { setLoading(false); }
   };
 
   const handleResend = async () => {
-    if (!phone) { toast.error('Please enter your phone number'); return; }
     setResending(true);
     try {
-      await api.post('/auth/resend-otp', { phone });
+      await api.post('/auth/resend-otp', { email });
       toast.success('New OTP sent! Check server console in dev mode.');
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to resend OTP'); }
     finally { setResending(false); }
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md animate-fade-in-up">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -45,19 +44,13 @@ export default function VerifyOTP() {
           <h1 className="text-2xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
             Verify Your Email
           </h1>
-          <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">
+          <p className="text-slate-500 text-sm mt-2 max-w-xs mx-auto">
             Enter the 6-digit code sent to your email address. Check your inbox (and spam folder).
           </p>
         </div>
 
         <div className="card">
           <form onSubmit={handleVerify} className="space-y-5">
-            <div>
-              <label className="input-label">Phone Number</label>
-              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91 9876543210" className="input-field" required />
-            </div>
-
             <div>
               <label className="input-label">OTP Code</label>
               <input type="text" value={otp}
@@ -66,10 +59,12 @@ export default function VerifyOTP() {
                 className="input-field text-center text-3xl tracking-[0.5em] font-bold"
                 style={{ fontFamily: 'monospace', letterSpacing: '0.5em' }}
                 required />
-              <p className="text-xs text-gray-400 mt-1 text-center">{otp.length}/6 digits</p>
+              <p className="text-xs text-slate-400 mt-1 text-center">{otp.length}/6 digits</p>
             </div>
 
-            <button type="submit" disabled={loading || otp.length !== 6} className="btn-primary w-full py-3.5 text-base">
+            <button type="submit" disabled={loading || otp.length !== 6}
+              className="w-full py-3.5 text-base inline-flex items-center justify-center gap-2 text-white rounded-xl font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#C0162C' }}>
               {loading ? (
                 <span className="flex items-center gap-2">
                   <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -82,12 +77,12 @@ export default function VerifyOTP() {
             </button>
           </form>
 
-          <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
             <button onClick={handleResend} disabled={resending}
               className="text-sm text-[#C0162C] font-semibold hover:underline disabled:opacity-50 transition-colors">
               {resending ? 'Sending…' : '↩ Resend Code'}
             </button>
-            <Link to="/login" className="text-sm text-gray-400 hover:text-[#1A1A2E] transition-colors">
+            <Link to="/login" className="text-sm text-slate-400 hover:text-[#1A1A2E] transition-colors">
               ← Back to Login
             </Link>
           </div>
