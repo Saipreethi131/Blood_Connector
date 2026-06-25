@@ -68,7 +68,7 @@ export const registerDonor = async (req, res) => {
     });
 
     // Generate OTP and send via email
-    const otp = await sendOTP(phone);
+    const otp = await sendOTP(email);
     sendOTPEmail(user.email, otp); // fire-and-forget; failure is logged, not thrown
 
     const accessToken  = generateAccessToken(user._id, user.role);
@@ -194,21 +194,21 @@ export const registerHospital = async (req, res) => {
  */
 export const verifyOTP = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    const { email, otp } = req.body;
 
-    if (!phone || !otp) {
-      return res.status(400).json({ status: 'fail', message: 'Phone and OTP are required' });
+    if (!email || !otp) {
+      return res.status(400).json({ status: 'fail', message: 'Email and OTP are required' });
     }
 
     // Verify OTP code
-    const isOTPValid = await verifyOTPCode(phone, otp);
+    const isOTPValid = await verifyOTPCode(email, otp);
     if (!isOTPValid) {
       return res.status(400).json({ status: 'fail', message: 'Invalid or expired OTP code' });
     }
 
     // Find user and mark as verified
     const user = await User.findOneAndUpdate(
-      { phone },
+      { email },
       { isVerified: true, verificationStatus: 'approved' },
       { new: true }
     );
@@ -219,7 +219,7 @@ export const verifyOTP = async (req, res) => {
 
     res.status(200).json({
       status: 'success',
-      message: 'Phone number verified successfully. Account is active.',
+      message: 'Email verified successfully. Account is active.',
       user: {
         id: user._id,
         name: user.name,
@@ -242,22 +242,22 @@ export const verifyOTP = async (req, res) => {
  */
 export const resendOTP = async (req, res) => {
   try {
-    const { phone } = req.body;
+    const { email } = req.body;
 
-    if (!phone) {
-      return res.status(400).json({ status: 'fail', message: 'Phone number is required' });
+    if (!email) {
+      return res.status(400).json({ status: 'fail', message: 'Email is required' });
     }
 
-    const user = await User.findOne({ phone, role: 'donor' });
+    const user = await User.findOne({ email, role: 'donor' });
     if (!user) {
-      return res.status(404).json({ status: 'fail', message: 'Donor account not found with this phone number' });
+      return res.status(404).json({ status: 'fail', message: 'Donor account not found with this email' });
     }
 
     if (user.isVerified) {
-      return res.status(400).json({ status: 'fail', message: 'Phone number is already verified' });
+      return res.status(400).json({ status: 'fail', message: 'Email is already verified' });
     }
 
-    const otp = await sendOTP(phone);
+    const otp = await sendOTP(email);
     sendOTPEmail(user.email, otp); // fire-and-forget
 
     res.status(200).json({
