@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import {
+  LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import api from '../../api/axios.js';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { downloadCSV } from '../../utils/exportHelpers.js';
 
-const TABS = ['Overview', 'Pending Approvals', 'All Hospitals', 'All Users', 'Blood Requests'];
+const TABS = ['Overview', 'Pending Approvals', 'All Hospitals', 'All Users', 'Blood Requests', 'Blood Stock'];
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 const statusBadge = {
   pending:  'badge-pending',
@@ -21,7 +26,7 @@ function StatCard({ label, value, icon, gradient }) {
         {icon}
       </div>
       <p className="text-3xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>{value}</p>
-      <p className="text-gray-500 text-sm font-medium mt-1">{label}</p>
+      <p className="text-slate-500 text-sm font-medium mt-1">{label}</p>
     </div>
   );
 }
@@ -49,13 +54,16 @@ function ConfirmModal({ message, onConfirm, onCancel, confirmLabel = 'Confirm', 
 }
 
 // ── Overview Tab ──────────────────────────────────────────────────────────────
+const PIE_COLORS = ['#C0162C', '#ea580c', '#16a34a', '#2563eb', '#7c3aed', '#0891b2', '#ca8a04', '#db2777'];
+
 function OverviewTab() {
   const [stats, setStats] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/admin/stats')
-      .then(({ data }) => setStats(data.data))
+    Promise.all([api.get('/admin/stats'), api.get('/admin/analytics')])
+      .then(([statsRes, analyticsRes]) => { setStats(statsRes.data.data); setAnalytics(analyticsRes.data.data); })
       .catch(() => toast.error('Failed to load stats'))
       .finally(() => setLoading(false));
   }, []);
@@ -71,24 +79,115 @@ function OverviewTab() {
   return (
     <div className="space-y-8">
       <div>
-        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Users</h3>
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Users</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <StatCard label="Total Donors" value={users.totalDonors} icon="🤝" gradient="bg-gradient-to-br from-red-100 to-red-200" />
           <StatCard label="Total Hospitals" value={users.totalHospitals} icon="🏥" gradient="bg-gradient-to-br from-blue-100 to-blue-200" />
           <StatCard label="Approved" value={users.approvedHospitals} icon="✅" gradient="bg-gradient-to-br from-green-100 to-green-200" />
           <StatCard label="Pending" value={users.pendingHospitals} icon="⏳" gradient="bg-gradient-to-br from-yellow-100 to-yellow-200" />
-          <StatCard label="Rejected" value={users.rejectedHospitals} icon="❌" gradient="bg-gradient-to-br from-gray-100 to-gray-200" />
+          <StatCard label="Rejected" value={users.rejectedHospitals} icon="❌" gradient="bg-gradient-to-br from-slate-100 to-slate-200" />
         </div>
       </div>
       <div>
-        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Blood Requests</h3>
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Blood Requests</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Requests" value={requests.totalRequests} icon="📋" gradient="bg-gradient-to-br from-blue-100 to-blue-200" />
           <StatCard label="Pending" value={requests.pendingRequests} icon="🩸" gradient="bg-gradient-to-br from-yellow-100 to-yellow-200" />
           <StatCard label="Fulfilled" value={requests.fulfilledRequests} icon="✅" gradient="bg-gradient-to-br from-green-100 to-green-200" />
-          <StatCard label="Cancelled" value={requests.cancelledRequests} icon="🚫" gradient="bg-gradient-to-br from-gray-100 to-gray-200" />
+          <StatCard label="Cancelled" value={requests.cancelledRequests} icon="🚫" gradient="bg-gradient-to-br from-slate-100 to-slate-200" />
         </div>
       </div>
+
+      {analytics && (
+        <div>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Analytics</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="card lg:col-span-2">
+              <p className="text-sm font-bold text-[#1A1A2E] mb-3" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                📈 Registrations Over Time
+              </p>
+              {analytics.registrationsOverTime.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-12">Not enough data yet</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={analytics.registrationsOverTime}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#999" />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#999" />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="count" name="New users" stroke="#C0162C" strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div className="card flex flex-col items-center justify-center">
+              <p className="text-sm font-bold text-[#1A1A2E] mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                ✅ Fulfillment Rate
+              </p>
+              <div className="text-5xl font-bold" style={{ color: '#16a34a', fontFamily: 'Poppins, sans-serif' }}>
+                {analytics.fulfillmentRate}%
+              </div>
+              <p className="text-xs text-slate-400 mt-2 text-center">of all blood requests were fulfilled</p>
+            </div>
+
+            <div className="card">
+              <p className="text-sm font-bold text-[#1A1A2E] mb-3" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                🩸 Requests by Blood Group
+              </p>
+              {analytics.requestsByBloodGroup.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-12">No requests yet</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={analytics.requestsByBloodGroup} dataKey="count" nameKey="bloodGroup"
+                      cx="50%" cy="50%" outerRadius={75} label={({ bloodGroup }) => bloodGroup}>
+                      {analytics.requestsByBloodGroup.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div className="card">
+              <p className="text-sm font-bold text-[#1A1A2E] mb-3" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                🏙️ Most Active Cities
+              </p>
+              {analytics.topCities.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-12">No data yet</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {analytics.topCities.map((c) => (
+                    <div key={c.city} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600 font-medium truncate">{c.city}</span>
+                      <span className="font-bold text-[#C0162C]">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <p className="text-sm font-bold text-[#1A1A2E] mb-3" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                🏆 Top Donating Blood Groups
+              </p>
+              {analytics.topDonatingBloodGroups.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-12">No donations recorded yet</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {analytics.topDonatingBloodGroups.map((d) => (
+                    <div key={d.bloodGroup} className="flex items-center justify-between text-sm">
+                      <span className="font-bold text-[#1A1A2E]">{d.bloodGroup}</span>
+                      <span className="font-bold text-[#C0162C]">{d.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -138,7 +237,7 @@ function PendingApprovalsTab({ onCountChange }) {
     <div className="card text-center py-16">
       <div className="text-5xl mb-4">✅</div>
       <h3 className="font-bold text-[#1A1A2E] mb-2">All Clear!</h3>
-      <p className="text-gray-400">No hospitals awaiting approval</p>
+      <p className="text-slate-400">No hospitals awaiting approval</p>
     </div>
   );
 
@@ -157,7 +256,7 @@ function PendingApprovalsTab({ onCountChange }) {
         </ConfirmModal>
       )}
 
-      <p className="text-sm text-gray-500 mb-4">{hospitals.length} hospital(s) awaiting approval</p>
+      <p className="text-sm text-slate-500 mb-4">{hospitals.length} hospital(s) awaiting approval</p>
       <div className="space-y-4">
         {hospitals.map((h) => (
           <div key={h._id} className="card border-2 border-yellow-200 animate-fade-in-up">
@@ -168,9 +267,9 @@ function PendingApprovalsTab({ onCountChange }) {
                   <p className="font-bold text-[#1A1A2E]">{h.profile?.hospitalName || h.name}</p>
                   <span className="badge-pending">Pending</span>
                 </div>
-                <p className="text-sm text-gray-600">{h.email} · {h.phone}</p>
-                <p className="text-sm text-gray-500 mt-0.5">{h.profile?.address}</p>
-                <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-400">
+                <p className="text-sm text-slate-600">{h.email} · {h.phone}</p>
+                <p className="text-sm text-slate-500 mt-0.5">{h.profile?.address}</p>
+                <div className="flex flex-wrap gap-3 mt-1 text-xs text-slate-400">
                   <span>Reg: {h.profile?.licenseNumber || '—'}</span>
                   <span>Emergency: {h.profile?.emergencyContact || '—'}</span>
                   <span>Joined: {new Date(h.createdAt).toLocaleDateString()}</span>
@@ -238,7 +337,7 @@ function AllHospitalsTab() {
         {['', 'pending', 'approved', 'rejected'].map((s) => (
           <button key={s} onClick={() => setFilter(s)}
             className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all duration-200 ${
-              filter === s ? 'bg-[#C0162C] text-white' : 'bg-white text-gray-600 border-2 border-gray-200 hover:border-[#C0162C] hover:text-[#C0162C]'
+              filter === s ? 'bg-[#C0162C] text-white' : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-[#C0162C] hover:text-[#C0162C]'
             }`}>
             {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
           </button>
@@ -249,7 +348,7 @@ function AllHospitalsTab() {
         <div className="space-y-3">{[1,2,3].map(i=><div key={i} className="card h-20 skeleton"/>)}</div>
       ) : hospitals.length === 0 ? (
         <div className="card text-center py-12">
-          <p className="text-gray-400">No hospitals found</p>
+          <p className="text-slate-400">No hospitals found</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -262,8 +361,8 @@ function AllHospitalsTab() {
                     <p className="font-bold text-[#1A1A2E] text-sm">{h.profile?.hospitalName || h.name}</p>
                     <span className={statusBadge[h.verificationStatus] || 'badge-pending'}>{h.verificationStatus}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">{h.email} · {h.phone}</p>
-                  <p className="text-xs text-gray-400">{h.profile?.address}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{h.email} · {h.phone}</p>
+                  <p className="text-xs text-slate-400">{h.profile?.address}</p>
                 </div>
               </div>
               {h.verificationStatus === 'pending' && (
@@ -323,6 +422,19 @@ function AllUsersTab() {
     finally { setDeleteConfirm(null); }
   };
 
+  const handleExportCSV = () => {
+    if (users.length === 0) { toast.error('No users to export'); return; }
+    downloadCSV('users.csv', users.map((u) => ({
+      Name: u.name,
+      Email: u.email,
+      Phone: u.phone,
+      Role: u.role,
+      Status: u.verificationStatus,
+      Suspended: !!u.isSuspended,
+      Joined: new Date(u.createdAt).toLocaleDateString(),
+    })));
+  };
+
   const handleSuspendToggle = async (id, name, currentlySuspended) => {
     setActionId(id);
     const endpoint = currentlySuspended ? `/admin/users/${id}/unsuspend` : `/admin/users/${id}/suspend`;
@@ -364,7 +476,7 @@ function AllUsersTab() {
           {['', 'donor', 'hospital', 'admin'].map((r) => (
             <button key={r} onClick={() => { setRoleFilter(r); setPage(1); }}
               className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all duration-200 ${
-                roleFilter === r ? 'bg-[#C0162C] text-white' : 'bg-white text-gray-600 border-2 border-gray-200 hover:border-[#C0162C]'
+                roleFilter === r ? 'bg-[#C0162C] text-white' : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-[#C0162C]'
               }`}>
               {r === '' ? 'All' : r.charAt(0).toUpperCase() + r.slice(1)}
             </button>
@@ -379,27 +491,30 @@ function AllUsersTab() {
               className="btn-secondary text-sm h-10 px-3">Clear</button>
           )}
         </form>
-        <span className="text-sm text-gray-500 ml-auto font-medium">{total} user(s)</span>
+        <div className="flex items-center gap-3 ml-auto">
+          <span className="text-sm text-slate-500 font-medium">{total} user(s)</span>
+          <button onClick={handleExportCSV} className="btn-secondary text-xs py-2 px-4">📄 Export CSV</button>
+        </div>
       </div>
 
       {loading ? (
         <div className="space-y-2">{[1,2,3,4,5].map(i=><div key={i} className="card h-14 skeleton"/>)}</div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-2xl border-2 border-gray-100">
+          <div className="overflow-x-auto rounded-2xl border-2 border-slate-100">
             <table className="w-full text-sm">
-              <thead style={{ background: 'linear-gradient(135deg, #1A1A2E, #2d1b4e)' }}>
+              <thead style={{ background: '#FFF5F5' }}>
                 <tr>
                   {['Name', 'Email', 'Phone', 'Role', 'Status', 'Joined', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-xs font-bold text-white/70 uppercase tracking-wide whitespace-nowrap text-left">
+                    <th key={h} className="px-4 py-3 text-xs font-bold text-[#C0162C] uppercase tracking-wide whitespace-nowrap text-left">
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-50">
                 {users.map((u) => (
-                  <tr key={u._id} className="hover:bg-[#FFF0F0]/50 transition-colors">
+                  <tr key={u._id} className="hover:bg-[#FFF5F5]/50 transition-colors">
                     <td className="px-4 py-3 font-semibold text-[#1A1A2E] whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
@@ -409,10 +524,10 @@ function AllUsersTab() {
                         {u.name}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{u.email}</td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{u.phone}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{u.email}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{u.phone}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${roleColor[u.role] || 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${roleColor[u.role] || 'bg-slate-100 text-slate-600'}`}>
                         {u.role}
                       </span>
                     </td>
@@ -426,7 +541,7 @@ function AllUsersTab() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">
+                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap text-xs">
                       {new Date(u.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
@@ -457,7 +572,7 @@ function AllUsersTab() {
 
           {pages > 1 && (
             <div className="flex items-center justify-between mt-4">
-              <span className="text-sm text-gray-500">Page {page} of {pages}</span>
+              <span className="text-sm text-slate-500">Page {page} of {pages}</span>
               <div className="flex gap-2">
                 <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
                   className="btn-secondary text-sm py-2 px-4 disabled:opacity-40">← Prev</button>
@@ -498,30 +613,30 @@ function BloodRequestsTab() {
         {['', 'Pending', 'Fulfilled', 'Cancelled'].map((s) => (
           <button key={s} onClick={() => { setStatusFilter(s); setPage(1); }}
             className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all duration-200 ${
-              statusFilter === s ? 'bg-[#C0162C] text-white' : 'bg-white text-gray-600 border-2 border-gray-200 hover:border-[#C0162C]'
+              statusFilter === s ? 'bg-[#C0162C] text-white' : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-[#C0162C]'
             }`}>
             {s === '' ? 'All' : s}
           </button>
         ))}
-        <span className="text-sm text-gray-500 ml-auto font-medium">{total} request(s)</span>
+        <span className="text-sm text-slate-500 ml-auto font-medium">{total} request(s)</span>
       </div>
 
       {loading ? (
         <div className="space-y-2">{[1,2,3,4,5].map(i=><div key={i} className="card h-14 skeleton"/>)}</div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-2xl border-2 border-gray-100">
+          <div className="overflow-x-auto rounded-2xl border-2 border-slate-100">
             <table className="w-full text-sm">
-              <thead style={{ background: 'linear-gradient(135deg, #1A1A2E, #2d1b4e)' }}>
+              <thead style={{ background: '#FFF5F5' }}>
                 <tr>
                   {['Hospital', 'Blood', 'Units', 'Urgency', 'Status', 'Responses', 'Posted'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-xs font-bold text-white/70 uppercase tracking-wide whitespace-nowrap text-left">{h}</th>
+                    <th key={h} className="px-4 py-3 text-xs font-bold text-[#C0162C] uppercase tracking-wide whitespace-nowrap text-left">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-50">
                 {requests.map((r) => (
-                  <tr key={r._id} className="hover:bg-[#FFF0F0]/50 transition-colors">
+                  <tr key={r._id} className="hover:bg-[#FFF5F5]/50 transition-colors">
                     <td className="px-4 py-3 font-semibold text-[#1A1A2E] max-w-[160px] truncate">{r.hospitalName}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl font-bold text-white text-xs"
@@ -529,11 +644,11 @@ function BloodRequestsTab() {
                         {r.bloodGroup}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 font-medium">{r.unitsRequired}</td>
+                    <td className="px-4 py-3 text-slate-600 font-medium">{r.unitsRequired}</td>
                     <td className="px-4 py-3"><span className={urgencyClass[r.urgency]}>{r.urgency}</span></td>
                     <td className="px-4 py-3"><span className={reqStatusBadge[r.status]}>{r.status}</span></td>
-                    <td className="px-4 py-3 text-gray-500 font-medium">{r.responses?.length || 0}</td>
-                    <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{new Date(r.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-slate-500 font-medium">{r.responses?.length || 0}</td>
+                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap text-xs">{new Date(r.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -542,7 +657,7 @@ function BloodRequestsTab() {
 
           {pages > 1 && (
             <div className="flex items-center justify-between mt-4">
-              <span className="text-sm text-gray-500">Page {page} of {pages}</span>
+              <span className="text-sm text-slate-500">Page {page} of {pages}</span>
               <div className="flex gap-2">
                 <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
                   className="btn-secondary text-sm py-2 px-4 disabled:opacity-40">← Prev</button>
@@ -553,6 +668,102 @@ function BloodRequestsTab() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ── Blood Stock Tab ────────────────────────────────────────────────────────────
+function stockLevel(units) {
+  if (units < 5) return { color: '#C0162C', bg: '#FFF5F5', label: 'Low' };
+  if (units < 10) return { color: '#ea580c', bg: '#fff7ed', label: 'Medium' };
+  return { color: '#16a34a', bg: '#f0fdf4', label: 'Good' };
+}
+
+function BloodStockTab() {
+  const [stock, setStock] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchStock = () => {
+    setLoading(true);
+    api.get('/admin/blood-stock')
+      .then(({ data }) => setStock(data.data.stock))
+      .catch(() => toast.error('Failed to load blood stock'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(fetchStock, []);
+
+  const handleChange = (bloodGroup, value) => {
+    setStock((prev) =>
+      prev.map((s) => (s.bloodGroup === bloodGroup ? { ...s, unitsAvailable: Math.max(0, parseInt(value) || 0) } : s))
+    );
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put('/admin/blood-stock', { stock });
+      toast.success('Blood stock updated!');
+    } catch { toast.error('Failed to save blood stock'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="space-y-3">{BLOOD_GROUPS.map((bg) => <div key={bg} className="card h-16 skeleton" />)}</div>;
+
+  const maxUnits = Math.max(20, ...stock.map((s) => s.unitsAvailable));
+
+  return (
+    <div className="max-w-3xl">
+      <div className="card">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-lg font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              🩸 National Blood Stock
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">Admin-managed reference stock levels, independent of individual hospital inventories</p>
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary text-sm py-2 px-5 disabled:opacity-60">
+            {saving ? 'Saving…' : 'Save Stock'}
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {stock.map((s) => {
+            const level = stockLevel(s.unitsAvailable);
+            const pct = Math.min(100, (s.unitsAvailable / maxUnits) * 100);
+            return (
+              <div key={s.bloodGroup} className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #C0162C, #8B0000)', fontFamily: 'Poppins, sans-serif' }}>
+                  {s.bloodGroup}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: level.bg, color: level.color }}>
+                      {level.label}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {s.lastUpdated ? `Updated ${new Date(s.lastUpdated).toLocaleDateString()}` : 'Never updated'}
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: level.color }} />
+                  </div>
+                </div>
+                <input type="number" min={0} max={100000} value={s.unitsAvailable}
+                  onChange={(e) => handleChange(s.bloodGroup, e.target.value)}
+                  className="input-field w-24 text-center font-bold text-[#1A1A2E] flex-shrink-0" style={{ padding: '8px' }} />
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-4 mt-5 pt-4 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-3 rounded-full bg-[#C0162C]" /> Low (&lt;5 units)</div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-3 rounded-full bg-orange-500" /> Medium (&lt;10 units)</div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-3 rounded-full bg-green-600" /> Good (10+ units)</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -573,18 +784,18 @@ export default function AdminDashboard() {
             <h1 className="text-xl font-bold text-[#1A1A2E]" style={{ fontFamily: 'Poppins, sans-serif' }}>
               Admin Dashboard
             </h1>
-            <p className="text-gray-500 text-sm">{user?.name} · {user?.email}</p>
+            <p className="text-slate-500 text-sm">{user?.name} · {user?.email}</p>
           </div>
           <span className="badge-critical">👑 Admin</span>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b-2 border-gray-100 gap-1 overflow-x-auto">
+      <div className="flex border-b-2 border-slate-100 gap-1 overflow-x-auto">
         {TABS.map((tab) => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-5 py-3 text-sm font-semibold whitespace-nowrap transition-all duration-200 border-b-2 -mb-0.5 relative ${
-              activeTab === tab ? 'border-[#C0162C] text-[#C0162C]' : 'border-transparent text-gray-500 hover:text-[#1A1A2E]'
+              activeTab === tab ? 'border-[#C0162C] text-[#C0162C]' : 'border-transparent text-slate-500 hover:text-[#1A1A2E]'
             }`}>
             {tab}
             {tab === 'Pending Approvals' && pendingCount > 0 && (
@@ -604,6 +815,7 @@ export default function AdminDashboard() {
         {activeTab === 'All Hospitals'     && <AllHospitalsTab />}
         {activeTab === 'All Users'         && <AllUsersTab />}
         {activeTab === 'Blood Requests'    && <BloodRequestsTab />}
+        {activeTab === 'Blood Stock'       && <BloodStockTab />}
       </div>
     </div>
   );
