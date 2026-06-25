@@ -1,17 +1,34 @@
 import 'dotenv/config';
-import { Resend } from 'resend';
 
 const CLIENT = process.env.CLIENT_URL || 'http://localhost:5173';
-const FROM = `Blood Connector <${process.env.EMAIL_FROM}>`;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const canSend = () => !!process.env.RESEND_API_KEY;
+const canSend = () => !!(process.env.BREVO_API_KEY && process.env.EMAIL_FROM);
 
 if (canSend()) {
-  console.log('[Email] Resend client ready, EMAIL_FROM:', process.env.EMAIL_FROM);
+  console.log('[Email] Brevo ready, EMAIL_FROM:', process.env.EMAIL_FROM);
 } else {
-  console.warn('[Email] RESEND_API_KEY not set — email sending is disabled');
+  console.warn('[Email] BREVO_API_KEY or EMAIL_FROM not set — email sending is disabled');
+}
+
+async function sendEmail({ to, subject, html }) {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: 'Blood Connector', email: process.env.EMAIL_FROM },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo API error ${res.status}`);
+  }
 }
 
 const header = (subtitle) => `
@@ -33,16 +50,15 @@ const wrap = (inner) => `
 // ── OTP Verification Email ────────────────────────────────────────────────────
 export const sendOTPEmail = async (email, otp) => {
   console.log('[Email] Attempting to send OTP to:', email);
-  console.log('[Email] RESEND_API_KEY set:', !!process.env.RESEND_API_KEY);
+  console.log('[Email] BREVO_API_KEY set:', !!process.env.BREVO_API_KEY);
   console.log('[Email] EMAIL_FROM:', process.env.EMAIL_FROM);
 
   if (!canSend()) {
-    console.error('[Email] Cannot send OTP — RESEND_API_KEY not configured');
+    console.error('[Email] Cannot send OTP — BREVO_API_KEY/EMAIL_FROM not configured');
     return;
   }
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to: email,
       subject: 'Blood Connector - Your Verification Code',
       html: wrap(`
@@ -69,8 +85,7 @@ export const sendOTPEmail = async (email, otp) => {
 export const sendDonorResponseEmail = async ({ to, hospitalName, donorName, donorPhone, bloodGroup, units }) => {
   if (!canSend()) return;
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `🩸 A donor responded to your blood request!`,
       html: wrap(`
@@ -101,8 +116,7 @@ export const sendDonorResponseEmail = async ({ to, hospitalName, donorName, dono
 export const sendResponseAcceptedEmail = async ({ to, donorName, hospitalName, hospitalPhone, bloodGroup }) => {
   if (!canSend()) return;
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `✅ Your response was accepted by ${hospitalName}!`,
       html: wrap(`
@@ -136,8 +150,7 @@ export const sendResponseAcceptedEmail = async ({ to, donorName, hospitalName, h
 export const sendResponseRejectedEmail = async ({ to, donorName, hospitalName, bloodGroup }) => {
   if (!canSend()) return;
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `Update on your blood donation response`,
       html: wrap(`
@@ -173,8 +186,7 @@ export const sendResponseRejectedEmail = async ({ to, donorName, hospitalName, b
 export const sendHospitalApprovedEmail = async ({ to, hospitalName }) => {
   if (!canSend()) return;
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `✅ Your hospital registration has been approved!`,
       html: wrap(`
@@ -201,8 +213,7 @@ export const sendHospitalApprovedEmail = async ({ to, hospitalName }) => {
 export const sendHospitalRejectedEmail = async ({ to, hospitalName, reason }) => {
   if (!canSend()) return;
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `Update on your hospital registration`,
       html: wrap(`
@@ -230,8 +241,7 @@ export const sendCampAnnouncementEmail = async ({ to, donorName, title, hospital
   if (!canSend()) return;
   try {
     const campDate = new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `⛺ New Blood Camp Near You: ${title}`,
       html: wrap(`
@@ -263,8 +273,7 @@ export const sendCampAnnouncementEmail = async ({ to, donorName, title, hospital
 export const sendRequestExpiryReminderEmail = async ({ to, hospitalName, bloodGroup, unitsRequired, responseCount }) => {
   if (!canSend()) return;
   try {
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `⏱ Your ${bloodGroup} blood request expires in 24 hours`,
       html: wrap(`
@@ -299,8 +308,7 @@ export const sendCriticalRequestEmail = async ({ to, donorName, hospitalName, bl
     const accentColor = isEmergency ? '#C0162C' : '#F59E0B';
     const badge = isEmergency ? '🚨 CRITICAL' : '⚠️ URGENT';
 
-    await resend.emails.send({
-      from: FROM,
+    await sendEmail({
       to,
       subject: `${badge}: ${bloodGroup} blood needed at ${hospitalName}`,
       html: wrap(`
