@@ -13,14 +13,33 @@ import {
   sendCriticalRequestEmail,
 } from '../utils/emailService.js';
 import User from '../models/User.js';
+import { getUserRatingSummary } from './ratingController.js';
+
+const computeHospitalCompleteness = (hospital, user) => {
+  const checks = [
+    !!hospital?.hospitalName,
+    !!hospital?.address,
+    !!hospital?.licenseNumber,
+    !!hospital?.emergencyContact,
+    !!user?.phone,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+};
 
 export const getHospitalProfile = async (req, res) => {
   try {
     const hospital = await Hospital.findOne({ user: req.user._id }).populate('user', 'name email phone');
+
+    // Normally created atomically at registration, but return null gracefully
+    // instead of 404 — same convention as the donor profile endpoint — so the
+    // dashboard can render a friendly state instead of treating this as an error.
     if (!hospital) {
-      return res.status(404).json({ status: 'fail', message: 'Hospital profile not found' });
+      return res.status(200).json({ status: 'success', data: { hospital: null, profileCompleteness: null, rating: null } });
     }
-    res.status(200).json({ status: 'success', data: { hospital } });
+
+    const profileCompleteness = computeHospitalCompleteness(hospital, hospital.user);
+    const rating = await getUserRatingSummary(hospital.user._id);
+    res.status(200).json({ status: 'success', data: { hospital, profileCompleteness, rating } });
   } catch (error) {
     console.error('Get Hospital Profile Error:', error);
     res.status(500).json({ status: 'error', message: error.message });
@@ -51,10 +70,12 @@ export const updateHospitalProfile = async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'Hospital profile not found' });
     }
 
+    const profileCompleteness = computeHospitalCompleteness(hospital, hospital.user);
+
     res.status(200).json({
       status: 'success',
       message: 'Hospital profile updated successfully',
-      data: { hospital }
+      data: { hospital, profileCompleteness }
     });
   } catch (error) {
     console.error('Update Hospital Profile Error:', error);
@@ -64,7 +85,7 @@ export const updateHospitalProfile = async (req, res) => {
 
 export const searchDonors = async (req, res) => {
   try {
-    const { bloodGroup, city, lat, lng, radius, compatible } = req.query;
+    const { bloodGroup, city, lat, lng, radius, compatible, includeUnavailable } = req.query;
 
     // Expand to all compatible blood types when compatible=true
     let searchGroups = bloodGroup ? [bloodGroup] : null;
@@ -72,43 +93,54 @@ export const searchDonors = async (req, res) => {
       searchGroups = getCompatibleDonors(bloodGroup);
     }
 
-    if (lat && lng) {
-      const radiusInMeters = (parseFloat(radius) || 10) * 1000;
-      const matchQuery = { isAvailable: true };
-      if (searchGroups) matchQuery.bloodGroup = { $in: searchGroups };
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
 
-      const donors = await Donor.aggregate([
-        {
-          $geoNear: {
-            near: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
-            distanceField: 'distance',
-            maxDistance: radiusInMeters,
-            spherical: true,
-            query: matchQuery
-          }
-        },
-        {
-          $lookup: {
-            from: 'users',
-            localField: 'user',
-            foreignField: '_id',
-            as: 'user'
-          }
-        },
-        { $unwind: '$user' },
-        {
-          $project: {
-            bloodGroup: 1, address: 1, isAvailable: 1,
-            totalDonations: 1, lastDonationDate: 1, distance: 1,
-            'user._id': 1, 'user.name': 1, 'user.email': 1, 'user.phone': 1
-          }
-        }
-      ]);
+    if (lat && lng && !isNaN(parsedLat) && !isNaN(parsedLng)) {
+      try {
+        const radiusInMeters = (parseFloat(radius) || 10) * 1000;
+        const matchQuery = {};
+        if (includeUnavailable !== 'true') matchQuery.isAvailable = true;
+        if (searchGroups) matchQuery.bloodGroup = { $in: searchGroups };
 
-      return res.status(200).json({ status: 'success', data: { donors, count: donors.length } });
+        const donors = await Donor.aggregate([
+          {
+            $geoNear: {
+              near: { type: 'Point', coordinates: [parsedLng, parsedLat] },
+              distanceField: 'distance',
+              maxDistance: radiusInMeters,
+              spherical: true,
+              query: matchQuery
+            }
+          },
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'user',
+              foreignField: '_id',
+              as: 'user'
+            }
+          },
+          { $unwind: '$user' },
+          {
+            $project: {
+              bloodGroup: 1, address: 1, isAvailable: 1,
+              totalDonations: 1, lastDonationDate: 1, distance: 1,
+              'user._id': 1, 'user.name': 1, 'user.email': 1, 'user.phone': 1
+            }
+          }
+        ]);
+
+        return res.status(200).json({ status: 'success', data: { donors, count: donors.length } });
+      } catch (geoError) {
+        // No 2dsphere index, bad coordinates, etc. — fall back to a regular query below
+        // rather than failing the whole search.
+        console.error('Search Donors GeoNear Error, falling back to regular find:', geoError.message);
+      }
     }
 
-    const query = { isAvailable: true };
+    const query = {};
+    if (includeUnavailable !== 'true') query.isAvailable = true;
     if (searchGroups) query.bloodGroup = { $in: searchGroups };
     if (city) query.address = { $regex: city, $options: 'i' };
 
@@ -125,6 +157,13 @@ export const searchDonors = async (req, res) => {
 
 export const postBloodRequest = async (req, res) => {
   try {
+    if (req.user.verificationStatus !== 'approved') {
+      return res.status(403).json({
+        status: 'fail',
+        message: 'Your hospital account must be approved by an administrator before posting requests.'
+      });
+    }
+
     const { bloodGroup, unitsRequired, urgency, notes } = req.body;
 
     const hospitalProfile = await Hospital.findOne({ user: req.user._id });
@@ -151,15 +190,24 @@ export const postBloodRequest = async (req, res) => {
       const matchingDonors = await Donor.find({ bloodGroup, isAvailable: true })
         .populate('user', 'email name').lean();
 
-      const notificationDocs = matchingDonors.map((d) => ({
-        recipient: d.user,
+      // Donors whose `user` ref didn't resolve (deleted/orphaned account) can't receive a notification
+      const donorsWithUser = matchingDonors.filter((d) => d.user?._id);
+
+      const notificationDocs = donorsWithUser.map((d) => ({
+        recipient: d.user._id, // User _id, not Donor profile _id
         message: `${urgency.toUpperCase()}: ${hospitalProfile.hospitalName} urgently needs ${bloodGroup} blood — ${unitsRequired} unit(s) required.`,
         type: 'new_request',
         relatedRequest: bloodRequest._id
       }));
 
-      if (notificationDocs.length > 0) {
-        await Notification.insertMany(notificationDocs);
+      // Notification failures must never fail the request post itself — the
+      // BloodRequest is already saved by this point.
+      try {
+        if (notificationDocs.length > 0) {
+          await Notification.insertMany(notificationDocs, { ordered: false });
+        }
+      } catch (notifyError) {
+        console.error('Critical Request Notification Error:', notifyError.message);
       }
 
       const socketPayload = {
@@ -256,18 +304,24 @@ export const handleDonorResponse = async (req, res) => {
       ? `Your response to ${hospitalName}'s ${request.bloodGroup} blood request has been accepted! Please visit the hospital to confirm your donation.`
       : `Your response to ${hospitalName}'s ${request.bloodGroup} blood request was not needed this time. Thank you for stepping up!`;
 
-    const notification = await Notification.create({
-      recipient: donorId,
-      message: notifMessage,
-      type: 'request_update',
-      relatedRequest: request._id
-    });
+    // The response accept/reject decision is already saved — a notification
+    // failure here must not turn this into an error response.
+    try {
+      const notification = await Notification.create({
+        recipient: donorId, // donorId is already the donor's User _id
+        message: notifMessage,
+        type: 'request_update',
+        relatedRequest: request._id
+      });
 
-    emitToUser(donorId, 'notification', {
-      message: notification.message,
-      type: 'request_update',
-      requestId: request._id
-    });
+      emitToUser(donorId, 'notification', {
+        message: notification.message,
+        type: 'request_update',
+        requestId: request._id
+      });
+    } catch (notifyError) {
+      console.error('Donor Response Notification Error:', notifyError.message);
+    }
 
     // Email the donor about the accept / reject decision
     const donorUser = await User.findById(donorId).select('email name').lean();
@@ -345,7 +399,8 @@ export const updateRequestStatus = async (req, res) => {
         bloodGroup: request.bloodGroup
       }));
 
-      await Donation.insertMany(donationDocs, { ordered: false }).catch(() => {});
+      await Donation.insertMany(donationDocs, { ordered: false })
+        .catch((err) => console.error('Donation Record Creation Error:', err.message));
 
       await Donor.updateMany(
         { user: { $in: donorUserIds } },
