@@ -19,7 +19,9 @@ export const createCampRules = [
   body('title').trim().notEmpty().withMessage('Camp title is required').isLength({ max: 200 }),
   body('date').isISO8601().withMessage('Valid date is required').toDate(),
   body('address').trim().notEmpty().withMessage('Camp address is required'),
+  body('city').optional().trim().isLength({ max: 100 }).withMessage('City too long'),
   body('description').optional().isLength({ max: 1000 }).withMessage('Description too long'),
   body('targetBloodGroups').optional().isArray().withMessage('targetBloodGroups must be an array'),
   body('targetBloodGroups.*').optional().isIn(BLOOD_GROUPS).withMessage('Invalid blood group'),
+  body('expectedDonors').optional().isInt({ min: 0, max: 100000 }).withMessage('Expected donors must be a non-negative number'),
 ];

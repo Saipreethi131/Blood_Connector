@@ -3,10 +3,12 @@ import Hospital from '../models/Hospital.js';
 import Donor from '../models/Donor.js';
 import Notification from '../models/Notification.js';
 import { emitToBloodGroup } from '../socket/socketHandler.js';
+import { sendCampAnnouncementEmail } from '../utils/emailService.js';
+import User from '../models/User.js';
 
 export const createCamp = async (req, res) => {
   try {
-    const { title, description, date, address, targetBloodGroups } = req.body;
+    const { title, description, date, address, city, targetBloodGroups, expectedDonors } = req.body;
 
     const hospitalProfile = await Hospital.findOne({ user: req.user._id });
     if (!hospitalProfile) {
@@ -24,27 +26,46 @@ export const createCamp = async (req, res) => {
       description,
       date: new Date(date),
       address,
+      city: city || '',
       location: hospitalProfile.location,
       targetBloodGroups: targetBloodGroups || [],
+      expectedDonors: expectedDonors || 0,
     });
 
-    // Notify donors with matching blood groups (or all if no target groups)
+    // Notify donors with matching blood groups (or all if no target groups), optionally narrowed to the camp's city
     const bloodGroupsToNotify = targetBloodGroups?.length ? targetBloodGroups : ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
     const campDate = new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
     const donorQuery = { isAvailable: true };
     if (targetBloodGroups?.length) donorQuery.bloodGroup = { $in: targetBloodGroups };
+    if (city?.trim()) donorQuery.address = { $regex: city.trim(), $options: 'i' };
     const donors = await Donor.find(donorQuery).select('user bloodGroup').lean();
 
     if (donors.length > 0) {
+      // Camp + emails already succeed regardless — notification failures are logged, not thrown.
       await Notification.insertMany(
-        donors.map((d) => ({
-          recipient: d.user,
+        donors.filter((d) => d.user).map((d) => ({
+          recipient: d.user, // not populated above, so this is already the donor's User _id
           message: `🏕 Blood Camp: "${title}" by ${hospitalProfile.hospitalName} on ${campDate}. Register now!`,
           type: 'general',
         })),
         { ordered: false }
-      ).catch(() => {});
+      ).catch((notifyError) => console.error('Camp Announcement Notification Error:', notifyError.message));
+
+      const donorUsers = await User.find({ _id: { $in: donors.map((d) => d.user) } })
+        .select('email name').lean();
+      for (const u of donorUsers) {
+        if (u.email) {
+          sendCampAnnouncementEmail({
+            to: u.email,
+            donorName: u.name,
+            title,
+            hospitalName: hospitalProfile.hospitalName,
+            date: camp.date,
+            address,
+          });
+        }
+      }
     }
 
     bloodGroupsToNotify.forEach((bg) => {
@@ -127,11 +148,17 @@ export const registerForCamp = async (req, res) => {
     });
     await camp.save();
 
-    await Notification.create({
-      recipient: camp.hospital,
-      message: `${req.user.name} registered for your blood camp "${camp.title}"`,
-      type: 'general',
-    });
+    // Registration is already saved — a notification failure here must not
+    // turn this into an error response.
+    try {
+      await Notification.create({
+        recipient: camp.hospital, // camp.hospital is already the hospital's User _id
+        message: `${req.user.name} registered for your blood camp "${camp.title}"`,
+        type: 'general',
+      });
+    } catch (notifyError) {
+      console.error('Camp Registration Notification Error:', notifyError.message);
+    }
 
     res.json({ status: 'success', message: 'Registered for camp successfully', data: { campId: camp._id } });
   } catch (error) {

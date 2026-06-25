@@ -9,6 +9,7 @@ const bloodCampSchema = new Schema({
   description: { type: String, default: '' },
   date: { type: Date, required: true },
   address: { type: String, required: true },
+  city: { type: String, trim: true, default: '' },
   location: {
     type: { type: String, enum: ['Point'], default: 'Point' },
     coordinates: { type: [Number] },
@@ -17,6 +18,7 @@ const bloodCampSchema = new Schema({
     type: String,
     enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
   }],
+  expectedDonors: { type: Number, default: 0, min: 0 },
   registrations: [{
     donor: { type: ObjectId, ref: 'User' },
     donorName: { type: String, default: '' },
