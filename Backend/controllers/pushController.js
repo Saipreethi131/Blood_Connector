@@ -50,6 +50,30 @@ export const unsubscribe = async (req, res) => {
   }
 };
 
+// Called internally when a single specific user (e.g. a hospital, after a
+// donor responds) should get a push regardless of blood group.
+export const sendPushToUser = async (userId, payload) => {
+  ensureVapid();
+  try {
+    const subs = await PushSubscription.find({ user: userId }).lean();
+    const message = JSON.stringify(payload);
+
+    await Promise.allSettled(
+      subs.map(async ({ subscription, _id }) => {
+        try {
+          await webpush.sendNotification(subscription, message);
+        } catch (err) {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            await PushSubscription.findByIdAndDelete(_id);
+          }
+        }
+      })
+    );
+  } catch (error) {
+    console.error('Push Notification Error:', error);
+  }
+};
+
 // Called internally by hospitalController when posting urgent/critical requests
 export const sendPushToBloodGroup = async (bloodGroup, payload) => {
   ensureVapid();
