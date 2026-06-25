@@ -32,10 +32,9 @@ export const getAllRequests = async (req, res) => {
  */
 export const getRequestById = async (req, res) => {
   try {
-    const request = await BloodRequest.findById(req.params.id).populate(
-      'responses.donor',
-      'name email phone'
-    );
+    // donor name/phone are already denormalized onto each response at respond-time —
+    // no populate needed (and `responses.donor` isn't even a real schema path; it's `donorId`).
+    const request = await BloodRequest.findById(req.params.id);
 
     if (!request) {
       return res.status(404).json({ status: 'fail', message: 'Blood request not found' });
