@@ -1,49 +1,18 @@
-import 'dotenv/config'; // this module reads EMAIL_USER/PASS at import time, before
-// server.js's own dotenv.config() call runs (it fires after all of its
-// imports — including this module, transitively — have already evaluated)
-import dns from 'dns/promises';
-import nodemailer from 'nodemailer';
+import 'dotenv/config';
+import { Resend } from 'resend';
 
 const CLIENT = process.env.CLIENT_URL || 'http://localhost:5173';
+const FROM = `Blood Connector <${process.env.EMAIL_FROM}>`;
 
-// Render blocks all outbound IPv6. nodemailer's family:4 option is not reliably
-// passed through to the underlying socket on all Node versions, so we pre-resolve
-// smtp.gmail.com to an IPv4 address ourselves using dns.resolve4 (A-record only).
-let smtpHost = 'smtp.gmail.com';
-try {
-  const [ipv4] = await dns.resolve4('smtp.gmail.com');
-  smtpHost = ipv4;
-  console.log('[Email] Resolved smtp.gmail.com to IPv4:', smtpHost);
-} catch (e) {
-  console.warn('[Email] IPv4 pre-resolve failed, falling back to hostname:', e.message);
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+const canSend = () => !!process.env.RESEND_API_KEY;
+
+if (canSend()) {
+  console.log('[Email] Resend client ready, EMAIL_FROM:', process.env.EMAIL_FROM);
+} else {
+  console.warn('[Email] RESEND_API_KEY not set — email sending is disabled');
 }
-
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-  port: 465,
-  secure: true,
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  tls: {
-    servername: 'smtp.gmail.com', // required for SNI when host is an IP address
-    rejectUnauthorized: false,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
-});
-
-const canSend = () => !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
-
-// Verify SMTP connectivity once at startup so a misconfigured/blocked
-// connection shows up immediately in the deploy logs instead of silently
-// failing the first time someone tries to register.
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('[Email] SMTP connection failed:', error.message)
-  } else {
-    console.log('[Email] SMTP ready, EMAIL_USER:', process.env.EMAIL_USER)
-  }
-})
 
 const header = (subtitle) => `
   <div style="background:linear-gradient(135deg,#C0162C,#8B0000);padding:28px 24px;text-align:center;border-radius:12px 12px 0 0;">
@@ -64,16 +33,16 @@ const wrap = (inner) => `
 // ── OTP Verification Email ────────────────────────────────────────────────────
 export const sendOTPEmail = async (email, otp) => {
   console.log('[Email] Attempting to send OTP to:', email);
-  console.log('[Email] Using EMAIL_USER:', process.env.EMAIL_USER ? 'SET' : 'NOT SET');
-  console.log('[Email] Using EMAIL_PASS:', process.env.EMAIL_PASS ? 'SET' : 'NOT SET');
+  console.log('[Email] RESEND_API_KEY set:', !!process.env.RESEND_API_KEY);
+  console.log('[Email] EMAIL_FROM:', process.env.EMAIL_FROM);
 
   if (!canSend()) {
-    console.error('[Email] Cannot send OTP — EMAIL_USER/EMAIL_PASS not configured');
+    console.error('[Email] Cannot send OTP — RESEND_API_KEY not configured');
     return;
   }
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to: email,
       subject: 'Blood Connector - Your Verification Code',
       html: wrap(`
@@ -92,7 +61,7 @@ export const sendOTPEmail = async (email, otp) => {
     console.log('[Email] OTP email sent successfully to:', email);
   } catch (err) {
     console.error('[Email] OTP email failed:', err.message);
-    throw err; // let the caller (authController) log + decide how to respond
+    throw err;
   }
 };
 
@@ -100,8 +69,8 @@ export const sendOTPEmail = async (email, otp) => {
 export const sendDonorResponseEmail = async ({ to, hospitalName, donorName, donorPhone, bloodGroup, units }) => {
   if (!canSend()) return;
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `🩸 A donor responded to your blood request!`,
       html: wrap(`
@@ -132,8 +101,8 @@ export const sendDonorResponseEmail = async ({ to, hospitalName, donorName, dono
 export const sendResponseAcceptedEmail = async ({ to, donorName, hospitalName, hospitalPhone, bloodGroup }) => {
   if (!canSend()) return;
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `✅ Your response was accepted by ${hospitalName}!`,
       html: wrap(`
@@ -167,8 +136,8 @@ export const sendResponseAcceptedEmail = async ({ to, donorName, hospitalName, h
 export const sendResponseRejectedEmail = async ({ to, donorName, hospitalName, bloodGroup }) => {
   if (!canSend()) return;
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `Update on your blood donation response`,
       html: wrap(`
@@ -204,8 +173,8 @@ export const sendResponseRejectedEmail = async ({ to, donorName, hospitalName, b
 export const sendHospitalApprovedEmail = async ({ to, hospitalName }) => {
   if (!canSend()) return;
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `✅ Your hospital registration has been approved!`,
       html: wrap(`
@@ -232,8 +201,8 @@ export const sendHospitalApprovedEmail = async ({ to, hospitalName }) => {
 export const sendHospitalRejectedEmail = async ({ to, hospitalName, reason }) => {
   if (!canSend()) return;
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `Update on your hospital registration`,
       html: wrap(`
@@ -261,8 +230,8 @@ export const sendCampAnnouncementEmail = async ({ to, donorName, title, hospital
   if (!canSend()) return;
   try {
     const campDate = new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `⛺ New Blood Camp Near You: ${title}`,
       html: wrap(`
@@ -294,8 +263,8 @@ export const sendCampAnnouncementEmail = async ({ to, donorName, title, hospital
 export const sendRequestExpiryReminderEmail = async ({ to, hospitalName, bloodGroup, unitsRequired, responseCount }) => {
   if (!canSend()) return;
   try {
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `⏱ Your ${bloodGroup} blood request expires in 24 hours`,
       html: wrap(`
@@ -330,8 +299,8 @@ export const sendCriticalRequestEmail = async ({ to, donorName, hospitalName, bl
     const accentColor = isEmergency ? '#C0162C' : '#F59E0B';
     const badge = isEmergency ? '🚨 CRITICAL' : '⚠️ URGENT';
 
-    await transporter.sendMail({
-      from: `"Blood Connector" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: FROM,
       to,
       subject: `${badge}: ${bloodGroup} blood needed at ${hospitalName}`,
       html: wrap(`
