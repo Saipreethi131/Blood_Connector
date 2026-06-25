@@ -19,17 +19,13 @@ const canSend = () => !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 // Verify SMTP connectivity once at startup so a misconfigured/blocked
 // connection shows up immediately in the deploy logs instead of silently
 // failing the first time someone tries to register.
-if (canSend()) {
-  transporter.verify((error) => {
-    if (error) {
-      console.error('[Email] Transporter verification failed:', error.message);
-    } else {
-      console.log('[Email] Transporter ready to send emails');
-    }
-  });
-} else {
-  console.warn('[Email] EMAIL_USER/EMAIL_PASS not set — email sending is disabled');
-}
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('[Email] SMTP connection failed:', error.message)
+  } else {
+    console.log('[Email] SMTP ready, EMAIL_USER:', process.env.EMAIL_USER)
+  }
+})
 
 const header = (subtitle) => `
   <div style="background:linear-gradient(135deg,#C0162C,#8B0000);padding:28px 24px;text-align:center;border-radius:12px 12px 0 0;">

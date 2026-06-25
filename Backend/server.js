@@ -102,6 +102,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// TEMPORARY: remove after confirming Render env vars are set correctly
+app.get('/api/debug/email', (req, res) => {
+  res.json({
+    EMAIL_USER_SET: !!process.env.EMAIL_USER,
+    EMAIL_PASS_SET: !!process.env.EMAIL_PASS,
+    EMAIL_USER_LENGTH: process.env.EMAIL_USER?.length || 0,
+    NODE_ENV: process.env.NODE_ENV
+  });
+});
+
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
