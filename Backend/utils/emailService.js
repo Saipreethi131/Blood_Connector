@@ -20,8 +20,8 @@ try {
 
 const transporter = nodemailer.createTransport({
   host: smtpHost,
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
   tls: {
     servername: 'smtp.gmail.com', // required for SNI when host is an IP address
